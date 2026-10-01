@@ -9,9 +9,11 @@ export class UI {
     document.getElementById('brandIcon').innerHTML = Icons.brand;
     document.getElementById('btnPaste').innerHTML = Icons.clipboard;
     document.getElementById('btnSubmit').innerHTML = Icons.arrowRight;
+    document.getElementById('btnCheckUpdate').innerHTML = Icons.refresh;
     document.getElementById('btnToggleHistory').innerHTML = Icons.history;
     document.getElementById('btnClearHistory').innerHTML = Icons.trash;
   }
+
 
   static showToast(msg) {
     const toast = document.getElementById('toast');

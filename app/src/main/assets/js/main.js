@@ -2,6 +2,7 @@ import { TikTokApi } from './api.js';
 import { Downloader } from './downloader.js';
 import { Storage } from './storage.js';
 import { UI } from './ui.js';
+import { Updater } from './updater.js';
 
 class App {
   static init() {
@@ -11,9 +12,28 @@ class App {
     const input = document.getElementById('urlInput');
     const btnSubmit = document.getElementById('btnSubmit');
     const btnPaste = document.getElementById('btnPaste');
+    const btnCheckUpdate = document.getElementById('btnCheckUpdate');
     const btnToggleHistory = document.getElementById('btnToggleHistory');
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
+
+    btnCheckUpdate.addEventListener('click', async () => {
+      btnCheckUpdate.style.transform = 'rotate(360deg)';
+      btnCheckUpdate.style.transition = 'transform 0.6s ease';
+      setTimeout(() => {
+        btnCheckUpdate.style.transform = '';
+        btnCheckUpdate.style.transition = '';
+      }, 600);
+
+      const info = await Updater.checkUpdate();
+      if (info.hasUpdate) {
+        UI.showToast(`Nueva versión v${info.latest}`);
+        Downloader.downloadFile(info.downloadUrl, 'TikTokDownloader.apk', 'application/vnd.android.package-archive');
+      } else {
+        UI.showToast(`v${info.current} al día`);
+      }
+    });
+
 
     btnPaste.addEventListener('click', async () => {
       let text = '';

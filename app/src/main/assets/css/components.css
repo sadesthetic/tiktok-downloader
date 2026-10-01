@@ -5,6 +5,13 @@
   padding: 12px 4px 6px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+
 .brand {
   display: flex;
   align-items: center;
