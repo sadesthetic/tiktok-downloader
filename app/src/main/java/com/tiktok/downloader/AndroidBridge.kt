@@ -9,6 +9,14 @@ import android.webkit.JavascriptInterface
 import android.widget.Toast
 
 class AndroidBridge(private val context: Context) {
+    var pendingUrl: String? = null
+
+    @JavascriptInterface
+    fun getSharedUrl(): String {
+        val url = pendingUrl ?: ""
+        pendingUrl = null
+        return url
+    }
 
     @JavascriptInterface
     fun download(url: String, filename: String, mimeType: String) {

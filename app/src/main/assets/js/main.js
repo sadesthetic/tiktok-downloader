@@ -58,6 +58,19 @@ class App {
       if (e.key === 'Enter') this.processUrl(input.value);
     });
 
+    window.handleSharedUrl = (url) => {
+      if (!url) return;
+      input.value = url;
+      this.processUrl(url);
+    };
+
+    if (Downloader.isNative() && typeof window.AndroidBridge.getSharedUrl === 'function') {
+      const initialShared = window.AndroidBridge.getSharedUrl();
+      if (initialShared) {
+        window.handleSharedUrl(initialShared);
+      }
+    }
+
     btnToggleHistory.addEventListener('click', () => {
       const isHidden = historyPanel.style.display === 'none';
       historyPanel.style.display = isHidden ? 'flex' : 'none';

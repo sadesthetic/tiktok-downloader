@@ -1,5 +1,5 @@
 export class Updater {
-  static CURRENT_VERSION = '1.0.0';
+  static CURRENT_VERSION = '1.0.1';
 
   static async checkUpdate() {
     try {

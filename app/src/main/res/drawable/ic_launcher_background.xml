@@ -5,12 +5,11 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#070B12"
+        android:fillColor="#090B0E"
         android:pathData="M0,0h108v108h-108z" />
-    <!-- Rounded icon card -->
     <path
-        android:fillColor="#0F172A"
-        android:strokeColor="#1E293B"
+        android:fillColor="#121620"
+        android:strokeColor="#222B3A"
         android:strokeWidth="1.5"
-        android:pathData="M30,18 h48 a12,12 0 0 1 12,12 v48 a12,12 0 0 1 -12,12 h-48 a12,12 0 0 1 -12,-12 v-48 a12,12 0 0 1 12,-12 z" />
+        android:pathData="M24,20 h60 a14,14 0 0 1 14,14 v40 a14,14 0 0 1 -14,14 h-60 a14,14 0 0 1 -14,-14 v-40 a14,14 0 0 1 14,-14 z" />
 </vector>

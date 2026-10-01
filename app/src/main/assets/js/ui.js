@@ -42,20 +42,25 @@ export class UI {
     document.getElementById('cardCaption').textContent = data.title;
 
     const viewer = document.getElementById('mediaViewer');
+    const content = document.getElementById('mediaContent') || viewer;
     const badge = document.getElementById('mediaBadge');
     const actions = document.getElementById('actionBar');
 
-    viewer.innerHTML = '';
+    content.innerHTML = '';
     actions.innerHTML = '';
+    viewer.querySelectorAll('.gallery-nav').forEach(el => el.remove());
 
     if (data.isImages) {
-      badge.innerHTML = `${Icons.image} <span>1 / ${data.images.length}</span>`;
+      if (badge) {
+        badge.style.display = 'flex';
+        badge.innerHTML = `${Icons.image} <span>1 / ${data.images.length}</span>`;
+      }
 
       const img = document.createElement('img');
       img.id = 'activeImage';
       img.className = 'media-image';
       img.src = data.images[0];
-      viewer.appendChild(img);
+      content.appendChild(img);
 
       if (data.images.length > 1) {
         const btnPrev = document.createElement('button');
@@ -100,7 +105,10 @@ export class UI {
       if (subRow.children.length > 0) actions.appendChild(subRow);
 
     } else {
-      badge.innerHTML = `${Icons.video} <span>MP4</span>`;
+      if (badge) {
+        badge.style.display = 'flex';
+        badge.innerHTML = `${Icons.video} <span>MP4</span>`;
+      }
 
       const video = document.createElement('video');
       video.className = 'media-video';
@@ -108,7 +116,7 @@ export class UI {
       video.poster = data.cover;
       video.controls = true;
       video.playsInline = true;
-      viewer.appendChild(video);
+      content.appendChild(video);
 
       const btnDlVideo = document.createElement('button');
       btnDlVideo.className = 'btn-primary';
