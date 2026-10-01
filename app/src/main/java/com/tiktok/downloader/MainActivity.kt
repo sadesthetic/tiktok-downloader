@@ -43,6 +43,10 @@ class MainActivity : ComponentActivity() {
                             domStorageEnabled = true
                             allowFileAccess = true
                             allowContentAccess = true
+                            @Suppress("DEPRECATION")
+                            allowFileAccessFromFileURLs = true
+                            @Suppress("DEPRECATION")
+                            allowUniversalAccessFromFileURLs = true
                             cacheMode = WebSettings.LOAD_DEFAULT
                         }
 
@@ -56,7 +60,14 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        webChromeClient = WebChromeClient()
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+                                message?.let {
+                                    android.util.Log.d("WebViewConsole", "${it.message()} [${it.sourceId()}:${it.lineNumber()}]")
+                                }
+                                return true
+                            }
+                        }
 
                         loadUrl("file:///android_asset/index.html")
                         this@MainActivity.webView = this

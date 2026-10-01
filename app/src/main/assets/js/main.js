@@ -39,31 +39,34 @@ class App {
 
     btnPaste.addEventListener('click', async () => {
       let text = '';
-      if (Downloader.isNative()) {
+      if (Downloader.isNative() && window.AndroidBridge && window.AndroidBridge.getClipboard) {
         text = window.AndroidBridge.getClipboard();
-      } else if (navigator.clipboard && navigator.clipboard.readText) {
+      }
+      if (!text && navigator.clipboard && navigator.clipboard.readText) {
         try {
           text = await navigator.clipboard.readText();
         } catch {}
       }
       if (text) {
         input.value = text;
-        this.processUrl(text);
+        App.processUrl(text);
+      } else {
+        UI.showToast('Portapapeles vacío');
       }
     });
 
     btnSubmit.addEventListener('click', () => {
-      this.processUrl(input.value);
+      App.processUrl(input.value);
     });
 
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.processUrl(input.value);
+      if (e.key === 'Enter') App.processUrl(input.value);
     });
 
     window.handleSharedUrl = (url) => {
       if (!url) return;
       input.value = url;
-      this.processUrl(url);
+      App.processUrl(url);
     };
 
     try {
