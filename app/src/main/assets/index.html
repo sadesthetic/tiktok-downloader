@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>TikTok Downloader</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon" id="brandIcon"></div>
+        <span class="brand-title">Downloader</span>
+      </div>
+      <button class="icon-btn" id="btnToggleHistory"></button>
+    </header>
+
+    <div class="input-box">
+      <input type="url" id="urlInput" class="url-input" placeholder="Enlace de TikTok..." autocomplete="off" spellcheck="false">
+      <button class="btn-paste" id="btnPaste"></button>
+      <button class="btn-submit" id="btnSubmit"></button>
+    </div>
+
+    <div class="loader-container" id="loader">
+      <div class="spinner"></div>
+    </div>
+
+    <div class="result-card" id="resultCard">
+      <div class="author-bar">
+        <img id="authorAvatar" class="author-avatar" alt="">
+        <div class="author-meta">
+          <span id="authorName" class="author-name"></span>
+          <span id="authorId" class="author-id"></span>
+        </div>
+      </div>
+
+      <div class="card-caption" id="cardCaption"></div>
+
+      <div class="media-viewer" id="mediaViewer">
+        <div class="badge" id="mediaBadge"></div>
+      </div>
+
+      <div class="action-bar" id="actionBar"></div>
+    </div>
+
+    <section class="history-panel" id="historyPanel" style="display: none;">
+      <div class="history-header">
+        <span class="history-title">Recientes</span>
+        <button class="icon-btn" id="btnClearHistory"></button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+:root {
+  --bg-primary: #090b0e;
+  --bg-surface: #11141a;
+  --bg-card: #161b24;
+  --bg-hover: #1e2430;
+  --border: #222936;
+  --border-focus: #3b82f6;
+  
+  --text-main: #f3f5f8;
+  --text-muted: #798394;
+  --text-dim: #4d5666;
+  
+  --accent: #fe2c55;
+  --accent-cyan: #25f4ee;
+  --accent-blue: #3b82f6;
+  --accent-green: #10b981;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 9999px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
