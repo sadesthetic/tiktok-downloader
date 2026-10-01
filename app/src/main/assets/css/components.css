@@ -77,17 +77,35 @@
 }
 
 .btn-paste {
-  padding: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
 
 .btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 38px;
   height: 38px;
   border-radius: var(--radius-sm);
   background: var(--text-main);
   color: var(--bg-primary);
+}
+
+.icon-btn, .btn-paste, .btn-submit, .brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn svg, .btn-paste svg, .btn-submit svg, .brand-icon svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .btn-submit:disabled {

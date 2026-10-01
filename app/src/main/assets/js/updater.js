@@ -1,5 +1,5 @@
 export class Updater {
-  static CURRENT_VERSION = '1.0.1';
+  static CURRENT_VERSION = '1.0.2';
   static REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
 
   static async checkUpdate() {

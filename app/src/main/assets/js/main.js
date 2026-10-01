@@ -66,12 +66,14 @@ class App {
       this.processUrl(url);
     };
 
-    if (Downloader.isNative() && typeof window.AndroidBridge.getSharedUrl === 'function') {
-      const initialShared = window.AndroidBridge.getSharedUrl();
-      if (initialShared) {
-        window.handleSharedUrl(initialShared);
+    try {
+      if (Downloader.isNative() && window.AndroidBridge && window.AndroidBridge.getSharedUrl) {
+        const initialShared = window.AndroidBridge.getSharedUrl();
+        if (initialShared) {
+          window.handleSharedUrl(initialShared);
+        }
       }
-    }
+    } catch {}
 
     btnToggleHistory.addEventListener('click', () => {
       const isHidden = historyPanel.style.display === 'none';
@@ -123,4 +125,8 @@ class App {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => App.init());
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => App.init());
+} else {
+  App.init();
+}

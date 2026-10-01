@@ -6,12 +6,16 @@ export class UI {
   static currentImageIndex = 0;
 
   static initIcons() {
-    document.getElementById('brandIcon').innerHTML = Icons.brand;
-    document.getElementById('btnPaste').innerHTML = Icons.clipboard;
-    document.getElementById('btnSubmit').innerHTML = Icons.arrowRight;
-    document.getElementById('btnCheckUpdate').innerHTML = Icons.refresh;
-    document.getElementById('btnToggleHistory').innerHTML = Icons.history;
-    document.getElementById('btnClearHistory').innerHTML = Icons.trash;
+    const set = (id, svg) => {
+      const el = document.getElementById(id);
+      if (el && !el.children.length) el.innerHTML = svg;
+    };
+    set('brandIcon', Icons.brand);
+    set('btnPaste', Icons.clipboard);
+    set('btnSubmit', Icons.arrowRight);
+    set('btnCheckUpdate', Icons.refresh);
+    set('btnToggleHistory', Icons.history);
+    set('btnClearHistory', Icons.trash);
   }
 
 
