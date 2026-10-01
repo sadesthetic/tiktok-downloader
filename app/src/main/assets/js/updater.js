@@ -1,10 +1,12 @@
 export class Updater {
   static CURRENT_VERSION = '1.0.1';
+  static REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
 
   static async checkUpdate() {
     try {
-      const res = await fetch('version.json?t=' + Date.now());
-      if (!res.ok) throw new Error();
+      const url = `${this.REMOTE_MANIFEST_URL}?t=${Date.now()}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
       const isNewer = this.compare(data.version, this.CURRENT_VERSION) > 0;
@@ -12,11 +14,12 @@ export class Updater {
         hasUpdate: isNewer,
         current: this.CURRENT_VERSION,
         latest: data.version,
-        downloadUrl: data.downloadUrl || 'TikTokDownloader.apk'
+        downloadUrl: data.downloadUrl || 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk'
       };
     } catch {
       return {
         hasUpdate: false,
+        error: true,
         current: this.CURRENT_VERSION,
         latest: this.CURRENT_VERSION
       };

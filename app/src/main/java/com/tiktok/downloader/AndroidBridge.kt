@@ -52,5 +52,17 @@ class AndroidBridge(private val context: Context) {
     }
 
     @JavascriptInterface
+    fun openUrl(url: String) {
+        try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    @JavascriptInterface
     fun isNative(): Boolean = true
 }

@@ -42,4 +42,12 @@ export class Downloader {
       }
     }
   }
+
+  static openExternal(url) {
+    if (this.isNative() && typeof window.AndroidBridge.openUrl === 'function') {
+      window.AndroidBridge.openUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  }
 }

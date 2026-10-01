@@ -27,8 +27,10 @@ class App {
 
       const info = await Updater.checkUpdate();
       if (info.hasUpdate) {
-        UI.showToast(`Nueva versión v${info.latest}`);
-        Downloader.downloadFile(info.downloadUrl, 'TikTokDownloader.apk', 'application/vnd.android.package-archive');
+        UI.showToast(`Actualizando a v${info.latest}...`);
+        Downloader.openExternal(info.downloadUrl);
+      } else if (info.error) {
+        UI.showToast('Sin conexión para actualizar');
       } else {
         UI.showToast(`v${info.current} al día`);
       }
