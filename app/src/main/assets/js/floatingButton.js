@@ -97,7 +97,7 @@ export class FloatingButton {
       const holdDuration = 5000;
 
       const step = () => {
-        if (!isDown || isDragging) return;
+        if (!isDown) return;
         const elapsed = performance.now() - holdStartTime;
         const progress = Math.min(elapsed / holdDuration, 1);
         progressEl.style.strokeDashoffset = `${circumference * (1 - progress)}`;
@@ -123,7 +123,6 @@ export class FloatingButton {
 
       if (!isDragging && Math.hypot(dx, dy) > 6) {
         isDragging = true;
-        resetHold();
       }
 
       if (isDragging) {

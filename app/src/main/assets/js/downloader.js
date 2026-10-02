@@ -34,6 +34,25 @@ export class Downloader {
   }
 
   static async saveBlob(blob, filename, mimeType = 'video/mp4') {
+    if (this.isNative() && typeof window.AndroidBridge.saveChunkInit === 'function') {
+      window.AndroidBridge.saveChunkInit(filename);
+      const CHUNK_SIZE = 256 * 1024;
+      let offset = 0;
+      while (offset < blob.size) {
+        const slice = blob.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await slice.arrayBuffer();
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        window.AndroidBridge.saveChunkWrite(window.btoa(binary));
+        offset += CHUNK_SIZE;
+      }
+      window.AndroidBridge.saveChunkFinish(filename, mimeType);
+      return;
+    }
+
     if (this.isNative() && typeof window.AndroidBridge.saveBase64 === 'function') {
       const reader = new FileReader();
       reader.onloadend = () => {

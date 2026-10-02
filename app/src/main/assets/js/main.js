@@ -17,20 +17,14 @@ class App {
     const btnSubmit = document.getElementById('btnSubmit');
     const btnPaste = document.getElementById('btnPaste');
     const btnCheckUpdate = document.getElementById('btnCheckUpdate');
-    const btnToggleFloating = document.getElementById('btnToggleFloating');
     const btnToggleHistory = document.getElementById('btnToggleHistory');
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
 
     FloatingButton.init(
       () => App.quickDownloadCurrent(),
-      () => btnToggleFloating.classList.remove('active')
+      () => Settings.syncFloatingState()
     );
-
-    btnToggleFloating.addEventListener('click', () => {
-      const isVisible = FloatingButton.toggle();
-      btnToggleFloating.classList.toggle('active', isVisible);
-    });
 
     let lastUpdateClick = 0;
     btnCheckUpdate.addEventListener('click', async () => {
@@ -188,11 +182,6 @@ class App {
       UI.renderResult(data);
       Storage.saveItem(data);
       UI.renderHistory((id) => this.processUrl(`https://www.tiktok.com/@user/video/${id}`));
-
-      if (data.isImages && !FloatingButton.isVisible) {
-        FloatingButton.show();
-        document.getElementById('btnToggleFloating')?.classList.add('active');
-      }
     } catch (err) {
       UI.showToast(err.message || 'Error al procesar enlace');
     } finally {

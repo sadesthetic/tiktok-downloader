@@ -18,6 +18,7 @@ import android.webkit.JavascriptInterface
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -76,6 +77,66 @@ class AndroidBridge(private val context: Context) {
             Toast.makeText(context, "Guardado: $filename", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private var chunkFile: File? = null
+    private var chunkOutput: FileOutputStream? = null
+
+    @JavascriptInterface
+    fun saveChunkInit(filename: String) {
+        try {
+            val dir = File(context.cacheDir, "chunks").apply { if (!exists()) mkdirs() }
+            val file = File(dir, filename).apply { if (exists()) delete() }
+            chunkFile = file
+            chunkOutput = FileOutputStream(file)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    @JavascriptInterface
+    fun saveChunkWrite(base64Chunk: String) {
+        try {
+            val bytes = Base64.decode(base64Chunk, Base64.DEFAULT)
+            chunkOutput?.write(bytes)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error chunk: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    @JavascriptInterface
+    fun saveChunkFinish(filename: String, mimeType: String) {
+        try {
+            chunkOutput?.flush()
+            chunkOutput?.close()
+            chunkOutput = null
+
+            val file = chunkFile ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        file.inputStream().use { input -> input.copyTo(out) }
+                    }
+                }
+                file.delete()
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!dir.exists()) dir.mkdirs()
+                val destFile = File(dir, filename)
+                file.copyTo(destFile, overwrite = true)
+                file.delete()
+                MediaScannerConnection.scanFile(context, arrayOf(destFile.absolutePath), arrayOf(mimeType), null)
+            }
+            Toast.makeText(context, "Guardado: $filename", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error al guardar: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -170,6 +231,39 @@ class AndroidBridge(private val context: Context) {
                 }
             }
         }.start()
+    }
+
+    @JavascriptInterface
+    fun isFloatingActive(): Boolean = FloatingService.isRunning
+
+    @JavascriptInterface
+    fun setFloatingEnabled(enabled: Boolean): Boolean {
+        val handler = Handler(Looper.getMainLooper())
+        if (enabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                handler.post {
+                    Toast.makeText(context, "Permite superponer sobre otras apps", Toast.LENGTH_SHORT).show()
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}")
+                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    context.startActivity(intent)
+                }
+                return false
+            }
+            val intent = Intent(context, FloatingService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            handler.post { Toast.makeText(context, "Botón flotante activado", Toast.LENGTH_SHORT).show() }
+            return true
+        } else {
+            context.stopService(Intent(context, FloatingService::class.java))
+            handler.post { Toast.makeText(context, "Botón flotante desactivado", Toast.LENGTH_SHORT).show() }
+            return false
+        }
     }
 
     @JavascriptInterface

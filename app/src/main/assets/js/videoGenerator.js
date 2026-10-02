@@ -2,15 +2,16 @@ import { Downloader } from './downloader.js';
 
 export class VideoGenerator {
   static async generateAndSave(imageUrl, musicUrl, filename, onProgress) {
-    const [img, audioBuffer, audioCtx] = await Promise.all([
+    const [img, audioData] = await Promise.all([
       this.loadImage(imageUrl),
       this.loadAudio(musicUrl)
-    ]).then(async ([img, { buffer, ctx }]) => [img, buffer, ctx]);
+    ]);
+    const { buffer: audioBuffer, ctx: audioCtx } = audioData;
 
     const canvas = document.createElement('canvas');
     let w = img.naturalWidth || 720;
     let h = img.naturalHeight || 1280;
-    const maxDim = 1280;
+    const maxDim = 1080;
     const scale = Math.min(maxDim / Math.max(w, h), 1);
     w = Math.floor((w * scale) / 2) * 2;
     h = Math.floor((h * scale) / 2) * 2;
@@ -25,7 +26,7 @@ export class VideoGenerator {
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
 
-    const canvasStream = canvas.captureStream(30);
+    const canvasStream = canvas.captureStream(24);
     const stream = new MediaStream([
       ...canvasStream.getVideoTracks(),
       ...dest.stream.getAudioTracks()
@@ -38,7 +39,7 @@ export class VideoGenerator {
       'video/webm;codecs=vp8,opus',
       'video/webm'
     ];
-    const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || 'video/mp4';
+    const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
     const recorder = new MediaRecorder(stream, { mimeType });
     const chunks = [];
 
@@ -90,13 +91,22 @@ export class VideoGenerator {
     });
   }
 
-  static loadImage(url) {
+  static async loadImage(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Error al descargar imagen');
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Error al cargar imagen'));
-      img.src = url;
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Error al procesar imagen'));
+      };
+      img.src = objectUrl;
     });
   }
 
@@ -105,7 +115,12 @@ export class VideoGenerator {
     if (!res.ok) throw new Error('Error al descargar audio');
     const arrayBuffer = await res.arrayBuffer();
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buffer = await ctx.decodeAudioData(arrayBuffer);
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    const buffer = await new Promise((resolve, reject) => {
+      ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+    });
     return { buffer, ctx };
   }
 }

@@ -234,6 +234,24 @@
       }
     }
     static async saveBlob(blob, filename, mimeType = "video/mp4") {
+      if (this.isNative() && typeof window.AndroidBridge.saveChunkInit === "function") {
+        window.AndroidBridge.saveChunkInit(filename);
+        const CHUNK_SIZE = 256 * 1024;
+        let offset = 0;
+        while (offset < blob.size) {
+          const slice = blob.slice(offset, offset + CHUNK_SIZE);
+          const buffer = await slice.arrayBuffer();
+          let binary = "";
+          const bytes = new Uint8Array(buffer);
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          window.AndroidBridge.saveChunkWrite(window.btoa(binary));
+          offset += CHUNK_SIZE;
+        }
+        window.AndroidBridge.saveChunkFinish(filename, mimeType);
+        return;
+      }
       if (this.isNative() && typeof window.AndroidBridge.saveBase64 === "function") {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -365,7 +383,7 @@
         holdStartTime = performance.now();
         const holdDuration = 5e3;
         const step = () => {
-          if (!isDown || isDragging) return;
+          if (!isDown) return;
           const elapsed = performance.now() - holdStartTime;
           const progress = Math.min(elapsed / holdDuration, 1);
           progressEl.style.strokeDashoffset = `${circumference * (1 - progress)}`;
@@ -388,7 +406,6 @@
         const dy = curY - startY;
         if (!isDragging && Math.hypot(dx, dy) > 6) {
           isDragging = true;
-          resetHold();
         }
         if (isDragging) {
           const btnW = el.offsetWidth || 56;
@@ -429,15 +446,32 @@
     static modal = null;
     static toggleBtn = null;
     static chkExp = null;
+    static chkFloat = null;
     static init() {
       this.modal = document.getElementById("settingsModal");
       this.toggleBtn = document.getElementById("btnSettings");
       this.chkExp = document.getElementById("chkExperimental");
+      this.chkFloat = document.getElementById("chkFloating");
       const closeBtn = document.getElementById("btnCloseSettings");
       if (this.chkExp) {
         this.chkExp.checked = Storage.isExperimental();
         this.chkExp.addEventListener("change", (e) => {
           Storage.setExperimental(e.target.checked);
+        });
+      }
+      if (this.chkFloat) {
+        this.syncFloatingState();
+        this.chkFloat.addEventListener("change", (e) => {
+          const enabled = e.target.checked;
+          if (typeof window.AndroidBridge !== "undefined" && typeof window.AndroidBridge.setFloatingEnabled === "function") {
+            const success = window.AndroidBridge.setFloatingEnabled(enabled);
+            if (!success && enabled) {
+              this.chkFloat.checked = false;
+            }
+          } else {
+            if (enabled) FloatingButton.show();
+            else FloatingButton.hide();
+          }
         });
       }
       if (this.toggleBtn) {
@@ -452,9 +486,18 @@
         });
       }
     }
+    static syncFloatingState() {
+      if (!this.chkFloat) return;
+      if (typeof window.AndroidBridge !== "undefined" && typeof window.AndroidBridge.isFloatingActive === "function") {
+        this.chkFloat.checked = window.AndroidBridge.isFloatingActive();
+      } else {
+        this.chkFloat.checked = FloatingButton.isVisible;
+      }
+    }
     static open() {
       if (!this.modal) return;
       if (this.chkExp) this.chkExp.checked = Storage.isExperimental();
+      this.syncFloatingState();
       this.modal.style.display = "flex";
       requestAnimationFrame(() => this.modal.classList.add("show"));
     }
@@ -664,7 +707,7 @@
 
   // app/src/main/assets/js/updater.js
   var Updater = class {
-    static CURRENT_VERSION = "1.0.5";
+    static CURRENT_VERSION = "1.0.6";
     static REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
     static async checkUpdate() {
       try {
@@ -704,14 +747,15 @@
   // app/src/main/assets/js/videoGenerator.js
   var VideoGenerator = class {
     static async generateAndSave(imageUrl, musicUrl, filename, onProgress) {
-      const [img, audioBuffer, audioCtx] = await Promise.all([
+      const [img, audioData] = await Promise.all([
         this.loadImage(imageUrl),
         this.loadAudio(musicUrl)
-      ]).then(async ([img2, { buffer, ctx: ctx2 }]) => [img2, buffer, ctx2]);
+      ]);
+      const { buffer: audioBuffer, ctx: audioCtx } = audioData;
       const canvas = document.createElement("canvas");
       let w = img.naturalWidth || 720;
       let h = img.naturalHeight || 1280;
-      const maxDim = 1280;
+      const maxDim = 1080;
       const scale = Math.min(maxDim / Math.max(w, h), 1);
       w = Math.floor(w * scale / 2) * 2;
       h = Math.floor(h * scale / 2) * 2;
@@ -723,7 +767,7 @@
       source.buffer = audioBuffer;
       const dest = audioCtx.createMediaStreamDestination();
       source.connect(dest);
-      const canvasStream = canvas.captureStream(30);
+      const canvasStream = canvas.captureStream(24);
       const stream = new MediaStream([
         ...canvasStream.getVideoTracks(),
         ...dest.stream.getAudioTracks()
@@ -735,7 +779,7 @@
         "video/webm;codecs=vp8,opus",
         "video/webm"
       ];
-      const mimeType = mimeTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "video/mp4";
+      const mimeType = mimeTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "video/webm";
       const recorder = new MediaRecorder(stream, { mimeType });
       const chunks = [];
       recorder.ondataavailable = (e) => {
@@ -780,13 +824,22 @@
         }, duration * 1e3);
       });
     }
-    static loadImage(url) {
+    static async loadImage(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Error al descargar imagen");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
       return new Promise((resolve, reject) => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("Error al cargar imagen"));
-        img.src = url;
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(img);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("Error al procesar imagen"));
+        };
+        img.src = objectUrl;
       });
     }
     static async loadAudio(url) {
@@ -794,7 +847,12 @@
       if (!res.ok) throw new Error("Error al descargar audio");
       const arrayBuffer = await res.arrayBuffer();
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      const buffer = await new Promise((resolve, reject) => {
+        ctx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+      });
       return { buffer, ctx };
     }
   };
@@ -809,18 +867,13 @@
       const btnSubmit = document.getElementById("btnSubmit");
       const btnPaste = document.getElementById("btnPaste");
       const btnCheckUpdate = document.getElementById("btnCheckUpdate");
-      const btnToggleFloating = document.getElementById("btnToggleFloating");
       const btnToggleHistory = document.getElementById("btnToggleHistory");
       const btnClearHistory = document.getElementById("btnClearHistory");
       const historyPanel = document.getElementById("historyPanel");
       FloatingButton.init(
         () => _App.quickDownloadCurrent(),
-        () => btnToggleFloating.classList.remove("active")
+        () => Settings.syncFloatingState()
       );
-      btnToggleFloating.addEventListener("click", () => {
-        const isVisible = FloatingButton.toggle();
-        btnToggleFloating.classList.toggle("active", isVisible);
-      });
       let lastUpdateClick = 0;
       btnCheckUpdate.addEventListener("click", async () => {
         const now = Date.now();
@@ -964,10 +1017,6 @@
         UI.renderResult(data);
         Storage.saveItem(data);
         UI.renderHistory((id) => this.processUrl(`https://www.tiktok.com/@user/video/${id}`));
-        if (data.isImages && !FloatingButton.isVisible) {
-          FloatingButton.show();
-          document.getElementById("btnToggleFloating")?.classList.add("active");
-        }
       } catch (err) {
         UI.showToast(err.message || "Error al procesar enlace");
       } finally {
