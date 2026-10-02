@@ -40,4 +40,18 @@ export class Storage {
       localStorage.removeItem(KEY);
     } catch {}
   }
+
+  static isExperimental() {
+    try {
+      return localStorage.getItem('tt_exp_mode') === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  static setExperimental(enabled) {
+    try {
+      localStorage.setItem('tt_exp_mode', enabled ? 'true' : 'false');
+    } catch {}
+  }
 }

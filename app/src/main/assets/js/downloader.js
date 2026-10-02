@@ -33,6 +33,26 @@ export class Downloader {
     }
   }
 
+  static async saveBlob(blob, filename, mimeType = 'video/mp4') {
+    if (this.isNative() && typeof window.AndroidBridge.saveBase64 === 'function') {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        window.AndroidBridge.saveBase64(reader.result, filename, mimeType);
+      };
+      reader.readAsDataURL(blob);
+      return;
+    }
+
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  }
+
   static async downloadImages(images, prefix = 'tiktok_photo') {
     for (let i = 0; i < images.length; i++) {
       const filename = `${prefix}_${i + 1}.jpg`;
@@ -48,6 +68,14 @@ export class Downloader {
       window.AndroidBridge.openUrl(url);
     } else {
       window.open(url, '_blank');
+    }
+  }
+
+  static installUpdate(url) {
+    if (this.isNative() && typeof window.AndroidBridge.installUpdate === 'function') {
+      window.AndroidBridge.installUpdate(url);
+    } else {
+      this.openExternal(url);
     }
   }
 }

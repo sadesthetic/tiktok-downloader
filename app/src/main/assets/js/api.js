@@ -1,3 +1,6 @@
+import { ExperimentalApi } from './experimentalApi.js';
+import { Storage } from './storage.js';
+
 export class TikTokApi {
   static cleanUrl(text) {
     if (!text) return null;
@@ -8,6 +11,11 @@ export class TikTokApi {
   static async fetchMedia(url) {
     const validUrl = this.cleanUrl(url);
     if (!validUrl) {
+      if (Storage.isExperimental()) {
+        if (ExperimentalApi.isYouTube(url) || ExperimentalApi.isInstagram(url)) {
+          return ExperimentalApi.fetchMedia(url.trim());
+        }
+      }
       throw new Error('URL inválida');
     }
 

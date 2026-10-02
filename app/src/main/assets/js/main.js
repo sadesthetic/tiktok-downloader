@@ -1,23 +1,40 @@
 import { TikTokApi } from './api.js';
 import { Downloader } from './downloader.js';
+import { FloatingButton } from './floatingButton.js';
+import { Settings } from './settings.js';
 import { Storage } from './storage.js';
 import { UI } from './ui.js';
 import { Updater } from './updater.js';
+import { VideoGenerator } from './videoGenerator.js';
 
 class App {
   static init() {
     UI.initIcons();
+    Settings.init();
     UI.renderHistory((id) => this.processUrl(`https://www.tiktok.com/@user/video/${id}`));
 
     const input = document.getElementById('urlInput');
     const btnSubmit = document.getElementById('btnSubmit');
     const btnPaste = document.getElementById('btnPaste');
     const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+    const btnToggleFloating = document.getElementById('btnToggleFloating');
     const btnToggleHistory = document.getElementById('btnToggleHistory');
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
 
+    FloatingButton.init(
+      () => App.quickDownloadCurrent(),
+      () => btnToggleFloating.classList.remove('active')
+    );
+
+    btnToggleFloating.addEventListener('click', () => {
+      const isVisible = FloatingButton.toggle();
+      btnToggleFloating.classList.toggle('active', isVisible);
+    });
+
+    let lastUpdateClick = 0;
     btnCheckUpdate.addEventListener('click', async () => {
+      const now = Date.now();
       btnCheckUpdate.style.transform = 'rotate(360deg)';
       btnCheckUpdate.style.transition = 'transform 0.6s ease';
       setTimeout(() => {
@@ -27,13 +44,17 @@ class App {
 
       const info = await Updater.checkUpdate();
       if (info.hasUpdate) {
-        UI.showToast(`Actualizando a v${info.latest}...`);
-        Downloader.openExternal(info.downloadUrl);
+        Downloader.installUpdate(info.downloadUrl);
       } else if (info.error) {
-        UI.showToast('Sin conexión para actualizar');
+        UI.showToast('Sin conexión');
       } else {
-        UI.showToast(`v${info.current} al día`);
+        if (now - lastUpdateClick < 2000) {
+          Downloader.installUpdate(info.downloadUrl);
+        } else {
+          UI.showToast(`v${info.current} al día`);
+        }
       }
+      lastUpdateClick = now;
     });
 
 
@@ -101,6 +122,25 @@ class App {
         const curImg = media.images[UI.currentImageIndex];
         Downloader.downloadFile(curImg, `tiktok_${media.id}_${UI.currentImageIndex + 1}.jpg`, 'image/jpeg');
         UI.showToast('Descargando Imagen');
+      } else if (target.id === 'btnDownloadImageWithMusic') {
+        const curImg = media.images[UI.currentImageIndex];
+        if (!media.musicUrl) {
+          UI.showToast('Sin música disponible');
+          return;
+        }
+        UI.showToast('Generando video con música...');
+        target.disabled = true;
+        VideoGenerator.generateAndSave(
+          curImg,
+          media.musicUrl,
+          `tiktok_${media.id}_${UI.currentImageIndex + 1}_music.mp4`
+        ).then(() => {
+          UI.showToast('Video con música descargado');
+        }).catch((err) => {
+          UI.showToast(err.message || 'Error al generar video');
+        }).finally(() => {
+          target.disabled = false;
+        });
       } else if (target.id === 'btnDownloadAllImages') {
         Downloader.downloadImages(media.images, `tiktok_${media.id}`);
         UI.showToast(`Descargando ${media.images.length} imágenes`);
@@ -109,6 +149,34 @@ class App {
         UI.showToast('Descargando Audio');
       }
     });
+  }
+
+  static quickDownloadCurrent() {
+    const media = UI.currentMedia;
+    if (!media) {
+      let text = '';
+      if (Downloader.isNative() && window.AndroidBridge && window.AndroidBridge.getClipboard) {
+        text = window.AndroidBridge.getClipboard();
+      }
+      if (text) {
+        this.processUrl(text).then(() => {
+          if (UI.currentMedia) this.quickDownloadCurrent();
+        });
+        return;
+      }
+      UI.showToast('Carga un TikTok primero');
+      return;
+    }
+
+    if (media.isImages && media.images?.length) {
+      const idx = UI.currentImageIndex;
+      const curImg = media.images[idx];
+      Downloader.downloadFile(curImg, `tiktok_${media.id}_${idx + 1}.jpg`, 'image/jpeg');
+      UI.showToast(`Foto ${idx + 1} descargada`);
+    } else if (media.videoUrl) {
+      Downloader.downloadFile(media.videoUrl, `tiktok_${media.id}.mp4`, 'video/mp4');
+      UI.showToast('MP4 descargado');
+    }
   }
 
   static async processUrl(rawUrl) {
@@ -120,6 +188,11 @@ class App {
       UI.renderResult(data);
       Storage.saveItem(data);
       UI.renderHistory((id) => this.processUrl(`https://www.tiktok.com/@user/video/${id}`));
+
+      if (data.isImages && !FloatingButton.isVisible) {
+        FloatingButton.show();
+        document.getElementById('btnToggleFloating')?.classList.add('active');
+      }
     } catch (err) {
       UI.showToast(err.message || 'Error al procesar enlace');
     } finally {

@@ -14,7 +14,10 @@ export class UI {
     set('btnPaste', Icons.clipboard);
     set('btnSubmit', Icons.arrowRight);
     set('btnCheckUpdate', Icons.refresh);
+    set('btnToggleFloating', Icons.floating);
     set('btnToggleHistory', Icons.history);
+    set('btnSettings', Icons.settings);
+    set('btnCloseSettings', Icons.close);
     set('btnClearHistory', Icons.trash);
   }
 
@@ -98,6 +101,12 @@ export class UI {
       }
 
       if (data.musicUrl) {
+        const btnWithMusic = document.createElement('button');
+        btnWithMusic.className = 'btn-secondary';
+        btnWithMusic.id = 'btnDownloadImageWithMusic';
+        btnWithMusic.innerHTML = `${Icons.videoMusic} <span>Con música</span>`;
+        subRow.appendChild(btnWithMusic);
+
         const btnMusic = document.createElement('button');
         btnMusic.className = 'btn-secondary';
         btnMusic.id = 'btnDownloadAudio';
