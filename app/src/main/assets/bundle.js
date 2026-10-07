@@ -397,184 +397,20 @@
     }
   };
 
-  // app/src/main/assets/js/floatingButton.js
-  var FloatingButton = class {
-    static el = null;
-    static progressEl = null;
-    static isVisible = false;
-    static onDownload = null;
-    static onClose = null;
-    static init(onDownload, onClose) {
-      this.onDownload = onDownload;
-      this.onClose = onClose;
-      this.createDom();
-      this.bindEvents();
-    }
-    static createDom() {
-      if (this.el) return;
-      const div = document.createElement("div");
-      div.id = "floatingQuickBtn";
-      div.className = "floating-quick-btn";
-      div.innerHTML = `
-      <svg class="floating-ring" viewBox="0 0 60 60">
-        <circle class="ring-bg" cx="30" cy="30" r="26" />
-        <circle class="ring-fill" id="floatingRingFill" cx="30" cy="30" r="26" />
-      </svg>
-      <div class="floating-btn-content" id="floatingBtnContent">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v13M6 11l6 6 6-6"/>
-          <line x1="4" y1="21" x2="20" y2="21"/>
-        </svg>
-      </div>
-    `;
-      document.body.appendChild(div);
-      this.el = div;
-      this.progressEl = div.querySelector("#floatingRingFill");
-    }
-    static show() {
-      if (!this.el) return;
-      this.el.style.display = "flex";
-      requestAnimationFrame(() => {
-        this.el.classList.add("visible");
-        this.el.classList.remove("vanishing");
-      });
-      this.isVisible = true;
-    }
-    static hide() {
-      if (!this.el) return;
-      this.el.classList.add("vanishing");
-      this.el.classList.remove("visible");
-      setTimeout(() => {
-        this.el.style.display = "none";
-        this.el.classList.remove("vanishing");
-      }, 300);
-      this.isVisible = false;
-      if (this.onClose) this.onClose();
-    }
-    static toggle() {
-      if (this.isVisible) this.hide();
-      else this.show();
-      return this.isVisible;
-    }
-    static bindEvents() {
-      const el = this.el;
-      const progressEl = this.progressEl;
-      const circumference = 2 * Math.PI * 26;
-      progressEl.style.strokeDasharray = `${circumference}`;
-      progressEl.style.strokeDashoffset = `${circumference}`;
-      let isDown = false;
-      let isDragging = false;
-      let startX = 0;
-      let startY = 0;
-      let initialLeft = 0;
-      let initialTop = 0;
-      let holdStartTime = 0;
-      let animId = null;
-      const resetHold = () => {
-        if (animId) cancelAnimationFrame(animId);
-        animId = null;
-        progressEl.style.strokeDashoffset = `${circumference}`;
-      };
-      const onPointerDown = (e) => {
-        isDown = true;
-        isDragging = false;
-        const rect = el.getBoundingClientRect();
-        startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-        startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-        initialLeft = rect.left;
-        initialTop = rect.top;
-        holdStartTime = performance.now();
-        const holdDuration = 5e3;
-        const step = () => {
-          if (!isDown) return;
-          const elapsed = performance.now() - holdStartTime;
-          const progress = Math.min(elapsed / holdDuration, 1);
-          progressEl.style.strokeDashoffset = `${circumference * (1 - progress)}`;
-          if (elapsed >= holdDuration) {
-            isDown = false;
-            resetHold();
-            if (navigator.vibrate) navigator.vibrate(50);
-            this.hide();
-            return;
-          }
-          animId = requestAnimationFrame(step);
-        };
-        animId = requestAnimationFrame(step);
-      };
-      const onPointerMove = (e) => {
-        if (!isDown) return;
-        const curX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-        const curY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-        const dx = curX - startX;
-        const dy = curY - startY;
-        if (!isDragging && Math.hypot(dx, dy) > 6) {
-          isDragging = true;
-        }
-        if (isDragging) {
-          const btnW = el.offsetWidth || 56;
-          const btnH = el.offsetHeight || 56;
-          const newLeft = Math.max(10, Math.min(window.innerWidth - btnW - 10, initialLeft + dx));
-          const newTop = Math.max(10, Math.min(window.innerHeight - btnH - 10, initialTop + dy));
-          el.style.left = `${newLeft}px`;
-          el.style.top = `${newTop}px`;
-          el.style.right = "auto";
-          el.style.bottom = "auto";
-        }
-      };
-      const onPointerUp = () => {
-        if (!isDown) return;
-        isDown = false;
-        resetHold();
-        if (!isDragging) {
-          el.classList.add("pulse");
-          setTimeout(() => el.classList.remove("pulse"), 200);
-          if (this.onDownload) this.onDownload();
-        }
-      };
-      el.addEventListener("mousedown", onPointerDown);
-      window.addEventListener("mousemove", onPointerMove);
-      window.addEventListener("mouseup", onPointerUp);
-      el.addEventListener("touchstart", onPointerDown, { passive: true });
-      window.addEventListener("touchmove", onPointerMove, { passive: true });
-      window.addEventListener("touchend", onPointerUp);
-      window.addEventListener("touchcancel", () => {
-        isDown = false;
-        resetHold();
-      });
-    }
-  };
-
   // app/src/main/assets/js/settings.js
   var Settings = class {
     static modal = null;
     static toggleBtn = null;
     static chkExp = null;
-    static chkFloat = null;
     static init() {
       this.modal = document.getElementById("settingsModal");
       this.toggleBtn = document.getElementById("btnSettings");
       this.chkExp = document.getElementById("chkExperimental");
-      this.chkFloat = document.getElementById("chkFloating");
       const closeBtn = document.getElementById("btnCloseSettings");
       if (this.chkExp) {
         this.chkExp.checked = Storage.isExperimental();
         this.chkExp.addEventListener("change", (e) => {
           Storage.setExperimental(e.target.checked);
-        });
-      }
-      if (this.chkFloat) {
-        this.syncFloatingState();
-        this.chkFloat.addEventListener("change", (e) => {
-          const enabled = e.target.checked;
-          if (typeof window.AndroidBridge !== "undefined" && typeof window.AndroidBridge.setFloatingEnabled === "function") {
-            const success = window.AndroidBridge.setFloatingEnabled(enabled);
-            if (!success && enabled) {
-              this.chkFloat.checked = false;
-            }
-          } else {
-            if (enabled) FloatingButton.show();
-            else FloatingButton.hide();
-          }
         });
       }
       if (this.toggleBtn) {
@@ -589,18 +425,9 @@
         });
       }
     }
-    static syncFloatingState() {
-      if (!this.chkFloat) return;
-      if (typeof window.AndroidBridge !== "undefined" && typeof window.AndroidBridge.isFloatingActive === "function") {
-        this.chkFloat.checked = window.AndroidBridge.isFloatingActive();
-      } else {
-        this.chkFloat.checked = FloatingButton.isVisible;
-      }
-    }
     static open() {
       if (!this.modal) return;
       if (this.chkExp) this.chkExp.checked = Storage.isExperimental();
-      this.syncFloatingState();
       this.modal.style.display = "flex";
       requestAnimationFrame(() => this.modal.classList.add("show"));
     }
@@ -622,7 +449,6 @@
     image: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
     music: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
     videoMusic: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="9 8 15 12 9 16 9 8"/><path d="M20 5v6a2 2 0 1 1-2-2h2"/></svg>`,
-    floating: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>`,
     chevronLeft: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`,
     chevronRight: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`,
     history: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
@@ -646,7 +472,6 @@
       set("btnPaste", Icons.clipboard);
       set("btnSubmit", Icons.arrowRight);
       set("btnCheckUpdate", Icons.refresh);
-      set("btnToggleFloating", Icons.floating);
       set("btnToggleHistory", Icons.history);
       set("btnSettings", Icons.settings);
       set("btnCloseSettings", Icons.close);
@@ -816,7 +641,7 @@
   // app/src/main/assets/js/updater.js
   var Updater = class {
     static get CURRENT_VERSION() {
-      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.7";
+      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.8";
     }
     static REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
     static async checkUpdate() {
@@ -996,10 +821,6 @@
       const btnToggleHistory = document.getElementById("btnToggleHistory");
       const btnClearHistory = document.getElementById("btnClearHistory");
       const historyPanel = document.getElementById("historyPanel");
-      FloatingButton.init(
-        () => _App.quickDownloadCurrent(),
-        () => Settings.syncFloatingState()
-      );
       let lastUpdateClick = 0;
       btnCheckUpdate.addEventListener("click", async () => {
         const now = Date.now();
@@ -1011,11 +832,19 @@
         }, 600);
         const info = await Updater.checkUpdate();
         if (info.hasUpdate) {
+          const wrapper = document.getElementById("updateWrapper");
+          const bar = document.getElementById("updateRingBar");
+          if (wrapper) wrapper.classList.add("downloading");
+          if (bar) bar.style.strokeDashoffset = "106.81";
           Downloader.installUpdate(info.downloadUrl);
         } else if (info.error) {
           UI.showToast("Sin conexi\xF3n");
         } else {
           if (now - lastUpdateClick < 2e3) {
+            const wrapper = document.getElementById("updateWrapper");
+            const bar = document.getElementById("updateRingBar");
+            if (wrapper) wrapper.classList.add("downloading");
+            if (bar) bar.style.strokeDashoffset = "106.81";
             Downloader.installUpdate(info.downloadUrl);
           } else {
             UI.showToast(`v${info.current} al d\xEDa`);
@@ -1120,32 +949,6 @@
         }
       });
     }
-    static quickDownloadCurrent() {
-      const media = UI.currentMedia;
-      if (!media) {
-        let text = "";
-        if (Downloader.isNative() && window.AndroidBridge && window.AndroidBridge.getClipboard) {
-          text = window.AndroidBridge.getClipboard();
-        }
-        if (text) {
-          this.processUrl(text).then(() => {
-            if (UI.currentMedia) this.quickDownloadCurrent();
-          });
-          return;
-        }
-        UI.showToast("Carga un TikTok primero");
-        return;
-      }
-      if (media.isImages && media.images?.length) {
-        const idx = UI.currentImageIndex;
-        const curImg = media.images[idx];
-        Downloader.downloadFile(curImg, `tiktok_${media.id}_${idx + 1}.jpg`, "image/jpeg");
-        UI.showToast(`Foto ${idx + 1} descargada`);
-      } else if (media.videoUrl) {
-        Downloader.downloadFile(media.videoUrl, `tiktok_${media.id}.mp4`, "video/mp4");
-        UI.showToast("MP4 descargado");
-      }
-    }
     static async processUrl(rawUrl) {
       if (!rawUrl || !rawUrl.trim()) return;
       UI.setLoader(true);
@@ -1160,6 +963,31 @@
         UI.setLoader(false);
       }
     }
+  };
+  window.onUpdateProgress = (progress) => {
+    const wrapper = document.getElementById("updateWrapper");
+    const bar = document.getElementById("updateRingBar");
+    if (wrapper) wrapper.classList.add("downloading");
+    if (bar) {
+      const circum = 106.81;
+      bar.style.strokeDashoffset = circum * (1 - Math.max(0, Math.min(1, progress)));
+    }
+  };
+  window.onUpdateComplete = () => {
+    const wrapper = document.getElementById("updateWrapper");
+    const bar = document.getElementById("updateRingBar");
+    if (bar) bar.style.strokeDashoffset = "0";
+    setTimeout(() => {
+      if (wrapper) wrapper.classList.remove("downloading");
+      if (bar) bar.style.strokeDashoffset = "106.81";
+    }, 1200);
+  };
+  window.onUpdateError = (err) => {
+    const wrapper = document.getElementById("updateWrapper");
+    const bar = document.getElementById("updateRingBar");
+    if (wrapper) wrapper.classList.remove("downloading");
+    if (bar) bar.style.strokeDashoffset = "106.81";
+    UI.showToast(err || "Error al actualizar");
   };
   window.onYtDlpProgress = (progress) => {
     UI.showToast(`Descargando: ${Math.round(progress * 100)}%`);

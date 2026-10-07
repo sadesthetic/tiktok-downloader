@@ -1,6 +1,5 @@
 import { TikTokApi } from './api.js';
 import { Downloader } from './downloader.js';
-import { FloatingButton } from './floatingButton.js';
 import { Settings } from './settings.js';
 import { Storage } from './storage.js';
 import { UI } from './ui.js';
@@ -21,11 +20,6 @@ class App {
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
 
-    FloatingButton.init(
-      () => App.quickDownloadCurrent(),
-      () => Settings.syncFloatingState()
-    );
-
     let lastUpdateClick = 0;
     btnCheckUpdate.addEventListener('click', async () => {
       const now = Date.now();
@@ -38,11 +32,19 @@ class App {
 
       const info = await Updater.checkUpdate();
       if (info.hasUpdate) {
+        const wrapper = document.getElementById('updateWrapper');
+        const bar = document.getElementById('updateRingBar');
+        if (wrapper) wrapper.classList.add('downloading');
+        if (bar) bar.style.strokeDashoffset = '106.81';
         Downloader.installUpdate(info.downloadUrl);
       } else if (info.error) {
         UI.showToast('Sin conexión');
       } else {
         if (now - lastUpdateClick < 2000) {
+          const wrapper = document.getElementById('updateWrapper');
+          const bar = document.getElementById('updateRingBar');
+          if (wrapper) wrapper.classList.add('downloading');
+          if (bar) bar.style.strokeDashoffset = '106.81';
           Downloader.installUpdate(info.downloadUrl);
         } else {
           UI.showToast(`v${info.current} al día`);
@@ -156,34 +158,6 @@ class App {
     });
   }
 
-  static quickDownloadCurrent() {
-    const media = UI.currentMedia;
-    if (!media) {
-      let text = '';
-      if (Downloader.isNative() && window.AndroidBridge && window.AndroidBridge.getClipboard) {
-        text = window.AndroidBridge.getClipboard();
-      }
-      if (text) {
-        this.processUrl(text).then(() => {
-          if (UI.currentMedia) this.quickDownloadCurrent();
-        });
-        return;
-      }
-      UI.showToast('Carga un TikTok primero');
-      return;
-    }
-
-    if (media.isImages && media.images?.length) {
-      const idx = UI.currentImageIndex;
-      const curImg = media.images[idx];
-      Downloader.downloadFile(curImg, `tiktok_${media.id}_${idx + 1}.jpg`, 'image/jpeg');
-      UI.showToast(`Foto ${idx + 1} descargada`);
-    } else if (media.videoUrl) {
-      Downloader.downloadFile(media.videoUrl, `tiktok_${media.id}.mp4`, 'video/mp4');
-      UI.showToast('MP4 descargado');
-    }
-  }
-
   static async processUrl(rawUrl) {
     if (!rawUrl || !rawUrl.trim()) return;
     
@@ -200,6 +174,34 @@ class App {
     }
   }
 }
+
+window.onUpdateProgress = (progress) => {
+  const wrapper = document.getElementById('updateWrapper');
+  const bar = document.getElementById('updateRingBar');
+  if (wrapper) wrapper.classList.add('downloading');
+  if (bar) {
+    const circum = 106.81;
+    bar.style.strokeDashoffset = circum * (1 - Math.max(0, Math.min(1, progress)));
+  }
+};
+
+window.onUpdateComplete = () => {
+  const wrapper = document.getElementById('updateWrapper');
+  const bar = document.getElementById('updateRingBar');
+  if (bar) bar.style.strokeDashoffset = '0';
+  setTimeout(() => {
+    if (wrapper) wrapper.classList.remove('downloading');
+    if (bar) bar.style.strokeDashoffset = '106.81';
+  }, 1200);
+};
+
+window.onUpdateError = (err) => {
+  const wrapper = document.getElementById('updateWrapper');
+  const bar = document.getElementById('updateRingBar');
+  if (wrapper) wrapper.classList.remove('downloading');
+  if (bar) bar.style.strokeDashoffset = '106.81';
+  UI.showToast(err || 'Error al actualizar');
+};
 
 window.onYtDlpProgress = (progress) => {
   UI.showToast(`Descargando: ${Math.round(progress * 100)}%`);

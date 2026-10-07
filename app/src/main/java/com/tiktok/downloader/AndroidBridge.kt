@@ -191,12 +191,38 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
             return
         }
 
+        val apkFile = File(context.cacheDir, "update.apk")
+        val currentCode = try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode else pInfo.versionCode.toLong()
+        } catch (_: Exception) { 0L }
+
+        if (apkFile.exists() && apkFile.length() > 1_000_000L) {
+            val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            if (archiveInfo != null) {
+                val apkCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archiveInfo.longVersionCode else archiveInfo.versionCode.toLong()
+                if (apkCode > currentCode) {
+                    handler.post {
+                        Toast.makeText(context, "Abriendo instalador...", Toast.LENGTH_SHORT).show()
+                        openApkInstaller(apkFile)
+                    }
+                    webView?.post {
+                        webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
+                    }
+                    return
+                }
+            }
+        }
+
         handler.post {
             Toast.makeText(context, "Descargando actualización...", Toast.LENGTH_SHORT).show()
         }
 
         Thread {
+            val tempFile = File(context.cacheDir, "update.apk.tmp")
             try {
+                if (tempFile.exists()) tempFile.delete()
+
                 val connection = URL(url).openConnection() as HttpURLConnection
                 connection.instanceFollowRedirects = true
                 connection.connectTimeout = 15000
@@ -207,35 +233,50 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                     throw Exception("HTTP ${connection.responseCode}")
                 }
 
-                val apkFile = File(context.cacheDir, "update.apk")
-                if (apkFile.exists()) apkFile.delete()
+                val totalBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    connection.contentLengthLong
+                } else {
+                    connection.contentLength.toLong()
+                }
+
+                var downloadedBytes = 0L
+                var lastReport = 0L
 
                 connection.inputStream.use { input ->
-                    apkFile.outputStream().use { output ->
-                        input.copyTo(output)
+                    tempFile.outputStream().use { output ->
+                        val buffer = ByteArray(32 * 1024)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            downloadedBytes += bytesRead
+                            val now = System.currentTimeMillis()
+                            if (totalBytes > 0 && now - lastReport > 80) {
+                                lastReport = now
+                                val progress = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0)
+                                webView?.post {
+                                    webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress($progress);", null)
+                                }
+                            }
+                        }
                     }
+                }
+
+                if (apkFile.exists()) apkFile.delete()
+                tempFile.renameTo(apkFile)
+
+                webView?.post {
+                    webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
                 }
 
                 handler.post {
-                    try {
-                        val apkUri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.provider",
-                            apkFile
-                        )
-
-                        val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(apkUri, "application/vnd.android.package-archive")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-
-                        context.startActivity(installIntent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
+                    openApkInstaller(apkFile)
                 }
             } catch (e: Exception) {
+                if (tempFile.exists()) tempFile.delete()
+                webView?.post {
+                    val safeErr = (e.message ?: "Error").replace("'", "\\'")
+                    webView?.evaluateJavascript("window.onUpdateError && window.onUpdateError('$safeErr');", null)
+                }
                 handler.post {
                     Toast.makeText(context, "Error al descargar: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -243,36 +284,23 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
         }.start()
     }
 
-    @JavascriptInterface
-    fun isFloatingActive(): Boolean = FloatingService.isRunning
+    private fun openApkInstaller(apkFile: File) {
+        try {
+            val apkUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
 
-    @JavascriptInterface
-    fun setFloatingEnabled(enabled: Boolean): Boolean {
-        val handler = Handler(Looper.getMainLooper())
-        if (enabled) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
-                handler.post {
-                    Toast.makeText(context, "Permite superponer sobre otras apps", Toast.LENGTH_SHORT).show()
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}")
-                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                    context.startActivity(intent)
-                }
-                return false
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val intent = Intent(context, FloatingService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-            handler.post { Toast.makeText(context, "Botón flotante activado", Toast.LENGTH_SHORT).show() }
-            return true
-        } else {
-            context.stopService(Intent(context, FloatingService::class.java))
-            handler.post { Toast.makeText(context, "Botón flotante desactivado", Toast.LENGTH_SHORT).show() }
-            return false
+
+            context.startActivity(installIntent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error al abrir instalador: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
