@@ -1,18 +1,23 @@
 export class Updater {
-  static CURRENT_VERSION = '1.0.6';
+  static get CURRENT_VERSION() {
+    return (window.AndroidBridge && window.AndroidBridge.getAppVersion)
+      ? window.AndroidBridge.getAppVersion()
+      : '1.0.7';
+  }
   static REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
 
   static async checkUpdate() {
     try {
+      const current = this.CURRENT_VERSION;
       const url = `${this.REMOTE_MANIFEST_URL}?t=${Date.now()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
-      const isNewer = this.compare(data.version, this.CURRENT_VERSION) > 0;
+      const isNewer = this.compare(data.version, current) > 0;
       return {
         hasUpdate: isNewer,
-        current: this.CURRENT_VERSION,
+        current,
         latest: data.version,
         downloadUrl: data.downloadUrl || 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk'
       };

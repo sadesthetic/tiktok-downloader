@@ -198,7 +198,12 @@ class FloatingService : Service() {
                 val data = json.optJSONObject("data")
 
                 if (data == null) {
-                    handler.post { Toast.makeText(this, "Enlace no válido", Toast.LENGTH_SHORT).show() }
+                    try {
+                        val file = YtDlpManager.download(this, url, "mp4") { _, _ -> }
+                        handler.post { Toast.makeText(this, "Descargado: ${file.name}", Toast.LENGTH_SHORT).show() }
+                    } catch (e: Exception) {
+                        handler.post { Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show() }
+                    }
                     return@Thread
                 }
 

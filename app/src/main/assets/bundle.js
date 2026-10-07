@@ -46,23 +46,93 @@
     }
     static async fetchInstagram(url) {
       const match = url.match(/(?:instagram\.com\/(?:p|reel|tv)\/)([\w-]+)/i);
-      const shortcode = match ? match[1] : Date.now().toString();
-      const cover = `https://instagram.com/p/${shortcode}/media/?size=l`;
-      const directUrl = await this.resolveStream(url, "1080");
-      return {
-        id: shortcode,
-        title: "Instagram Video",
-        cover,
-        isImages: false,
-        images: [],
-        videoUrl: directUrl || cover,
-        musicUrl: directUrl || cover,
-        author: {
-          name: "Instagram",
-          handle: `@${shortcode}`,
-          avatar: cover
+      const shortcode = match ? match[1] : null;
+      if (!shortcode) throw new Error("Enlace de Instagram inv\xE1lido");
+      const hosts = ["eeinstagram.com", "ddinstagram.com"];
+      let lastErr = null;
+      for (const host of hosts) {
+        try {
+          let title = "Instagram";
+          let authorName = `@${shortcode}`;
+          try {
+            const metaRes = await fetch(`https://${host}/p/${shortcode}/`, {
+              headers: { "User-Agent": "facebookexternalhit/1.1 (compatible; Discordbot/2.0; +https://discordapp.com)" },
+              signal: AbortSignal.timeout(6e3)
+            });
+            if (metaRes.ok) {
+              const html = await metaRes.text();
+              const desc = html.match(/property=["']og:description["'][^>]+content=["']([^"']+)["']/)?.[1];
+              const author = html.match(/name=["']twitter:title["'][^>]+content=["']([^"']+)["']/)?.[1];
+              if (desc && desc !== "Post not found") title = desc;
+              if (author) authorName = author;
+            }
+          } catch {
+          }
+          const mediaRes = await fetch(`https://${host}/videos/${shortcode}/1`, {
+            redirect: "follow",
+            headers: { "User-Agent": "Mozilla/5.0" },
+            signal: AbortSignal.timeout(8e3)
+          });
+          if (!mediaRes.ok && mediaRes.status !== 302 && mediaRes.status !== 200) {
+            throw new Error("Contenido no disponible");
+          }
+          const finalUrl = mediaRes.url;
+          const ctype = (mediaRes.headers.get("content-type") || "").toLowerCase();
+          const isVideo = ctype.includes("video") || finalUrl.includes(".mp4");
+          if (isVideo) {
+            return {
+              id: shortcode,
+              title,
+              cover: finalUrl,
+              isImages: false,
+              images: [],
+              videoUrl: finalUrl,
+              musicUrl: finalUrl,
+              author: {
+                name: authorName,
+                handle: authorName.startsWith("@") ? authorName : `@${shortcode}`,
+                avatar: finalUrl
+              }
+            };
+          }
+          const images = [finalUrl];
+          for (let i = 2; i <= 20; i++) {
+            try {
+              const nextRes = await fetch(`https://${host}/images/${shortcode}/${i}`, {
+                redirect: "follow",
+                headers: { "User-Agent": "Mozilla/5.0" },
+                signal: AbortSignal.timeout(4e3)
+              });
+              const nUrl = nextRes.url;
+              const nType = (nextRes.headers.get("content-type") || "").toLowerCase();
+              if (nUrl.includes("cdninstagram.com") && (nType.includes("image") || nType.includes("jpeg") || nType.includes("webp"))) {
+                images.push(nUrl);
+              } else {
+                break;
+              }
+            } catch {
+              break;
+            }
+          }
+          return {
+            id: shortcode,
+            title,
+            cover: images[0],
+            isImages: true,
+            images,
+            videoUrl: "",
+            musicUrl: "",
+            author: {
+              name: authorName,
+              handle: authorName.startsWith("@") ? authorName : `@${shortcode}`,
+              avatar: images[0]
+            }
+          };
+        } catch (e) {
+          lastErr = e;
         }
-      };
+      }
+      throw lastErr || new Error("No se pudo descargar el contenido de Instagram");
     }
     static async resolveStream(targetUrl, format = "1080") {
       try {
@@ -146,19 +216,52 @@
   var TikTokApi = class {
     static cleanUrl(text) {
       if (!text) return null;
-      const match = text.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?tiktok\.com\/[^\s"')<>]+/i);
+      const match = text.match(/https?:\/\/[^\s"')<>]+/i);
       return match ? match[0].replace(/[.,;:!?]+$/, "") : null;
     }
-    static async fetchMedia(url) {
-      const validUrl = this.cleanUrl(url);
-      if (!validUrl) {
-        if (Storage.isExperimental()) {
-          if (ExperimentalApi.isYouTube(url) || ExperimentalApi.isInstagram(url)) {
-            return ExperimentalApi.fetchMedia(url.trim());
-          }
+    static isTikTok(url) {
+      return /https?:\/\/(?:[a-zA-Z0-9-]+\.)?tiktok\.com\//i.test(url);
+    }
+    static async fetchMedia(rawText) {
+      const validUrl = this.cleanUrl(rawText);
+      if (!validUrl) throw new Error("URL inv\xE1lida");
+      if (this.isTikTok(validUrl)) {
+        try {
+          return await this.fetchTikTok(validUrl);
+        } catch {
         }
-        throw new Error("URL inv\xE1lida");
       }
+      if (window.AndroidBridge && typeof window.AndroidBridge.ytDlpGetInfo === "function") {
+        try {
+          const jsonStr = window.AndroidBridge.ytDlpGetInfo(validUrl);
+          const info = JSON.parse(jsonStr);
+          if (info && !info.error) {
+            return {
+              id: info.id || Date.now().toString(),
+              title: info.title || "Video",
+              cover: info.cover || "",
+              isImages: false,
+              images: [],
+              videoUrl: info.url || "",
+              musicUrl: "",
+              isYtDlp: true,
+              rawUrl: validUrl,
+              author: {
+                name: info.uploader || "yt-dlp",
+                handle: "",
+                avatar: info.cover || ""
+              }
+            };
+          }
+        } catch {
+        }
+      }
+      if (ExperimentalApi.isYouTube(validUrl) || ExperimentalApi.isInstagram(validUrl)) {
+        return ExperimentalApi.fetchMedia(validUrl);
+      }
+      throw new Error("No se pudo procesar el enlace");
+    }
+    static async fetchTikTok(validUrl) {
       let json = null;
       try {
         const formData = new FormData();
@@ -191,7 +294,7 @@
         isImages,
         images: isImages ? d.images.map(fixUrl) : [],
         videoUrl: fixUrl(d.hdplay || d.play),
-        musicUrl: fixUrl(d.music),
+        musicUrl: fixUrl(d.music_info?.play || d.music),
         author: {
           name: d.author?.nickname || "TikTok User",
           handle: d.author?.unique_id ? `@${d.author.unique_id}` : "",
@@ -630,30 +733,35 @@
       } else {
         if (badge) {
           badge.style.display = "flex";
-          badge.innerHTML = `${Icons.video} <span>MP4</span>`;
+          badge.innerHTML = `${Icons.video} <span>${data.isYtDlp ? "yt-dlp" : "MP4"}</span>`;
         }
-        const video = document.createElement("video");
-        video.className = "media-video";
-        video.src = data.videoUrl;
-        video.poster = data.cover;
-        video.controls = true;
-        video.playsInline = true;
-        content.appendChild(video);
+        if (data.videoUrl) {
+          const video = document.createElement("video");
+          video.className = "media-video";
+          video.src = data.videoUrl;
+          video.poster = data.cover;
+          video.controls = true;
+          video.playsInline = true;
+          content.appendChild(video);
+        } else if (data.cover) {
+          const img = document.createElement("img");
+          img.className = "media-image";
+          img.src = data.cover;
+          content.appendChild(img);
+        }
         const btnDlVideo = document.createElement("button");
         btnDlVideo.className = "btn-primary";
         btnDlVideo.id = "btnDownloadVideo";
         btnDlVideo.innerHTML = `${Icons.download} <span>Descargar MP4</span>`;
         const subRow = document.createElement("div");
         subRow.className = "action-row";
-        if (data.musicUrl) {
-          const btnMusic = document.createElement("button");
-          btnMusic.className = "btn-secondary";
-          btnMusic.id = "btnDownloadAudio";
-          btnMusic.innerHTML = `${Icons.music} <span>Audio</span>`;
-          subRow.appendChild(btnMusic);
-        }
+        const btnMusic = document.createElement("button");
+        btnMusic.className = "btn-secondary";
+        btnMusic.id = "btnDownloadAudio";
+        btnMusic.innerHTML = `${Icons.music} <span>Descargar MP3</span>`;
+        subRow.appendChild(btnMusic);
         actions.appendChild(btnDlVideo);
-        if (subRow.children.length > 0) actions.appendChild(subRow);
+        actions.appendChild(subRow);
       }
       card.classList.add("active");
       card.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -707,18 +815,21 @@
 
   // app/src/main/assets/js/updater.js
   var Updater = class {
-    static CURRENT_VERSION = "1.0.6";
+    static get CURRENT_VERSION() {
+      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.7";
+    }
     static REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
     static async checkUpdate() {
       try {
+        const current = this.CURRENT_VERSION;
         const url = `${this.REMOTE_MANIFEST_URL}?t=${Date.now()}`;
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const isNewer = this.compare(data.version, this.CURRENT_VERSION) > 0;
+        const isNewer = this.compare(data.version, current) > 0;
         return {
           hasUpdate: isNewer,
-          current: this.CURRENT_VERSION,
+          current,
           latest: data.version,
           downloadUrl: data.downloadUrl || "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk"
         };
@@ -785,19 +896,38 @@
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data);
       };
-      const duration = Math.min(audioBuffer.duration || 10, 15);
+      const maxDuration = 40;
+      const duration = Math.min(audioBuffer.duration || maxDuration, maxDuration);
       return new Promise((resolve, reject) => {
         let animId;
         const startTime = performance.now();
+        let frame = 0;
         const drawLoop = () => {
+          frame++;
           ctx.drawImage(img, 0, 0, w, h);
+          ctx.fillStyle = frame % 2 === 0 ? "rgba(0,0,0,0.004)" : "rgba(0,0,0,0.002)";
+          ctx.fillRect(0, 0, 1, 1);
           const elapsed = (performance.now() - startTime) / 1e3;
           if (onProgress) onProgress(Math.min(elapsed / duration, 1));
           if (elapsed < duration) {
             animId = requestAnimationFrame(drawLoop);
           }
         };
+        let timer;
+        const finish = () => {
+          if (recorder.state === "recording") {
+            try {
+              source.stop();
+            } catch {
+            }
+            recorder.stop();
+          }
+        };
+        source.onended = () => {
+          finish();
+        };
         recorder.onstop = async () => {
+          clearTimeout(timer);
           cancelAnimationFrame(animId);
           audioCtx.close().catch(() => {
           });
@@ -808,6 +938,7 @@
           resolve(finalName);
         };
         recorder.onerror = (e) => {
+          clearTimeout(timer);
           cancelAnimationFrame(animId);
           audioCtx.close().catch(() => {
           });
@@ -816,12 +947,7 @@
         recorder.start(100);
         source.start(0);
         drawLoop();
-        setTimeout(() => {
-          if (recorder.state === "recording") {
-            source.stop();
-            recorder.stop();
-          }
-        }, duration * 1e3);
+        timer = setTimeout(finish, (duration + 0.2) * 1e3);
       });
     }
     static async loadImage(url) {
@@ -948,12 +1074,18 @@
         const target = e.target.closest("button");
         if (!target || !UI.currentMedia) return;
         const media = UI.currentMedia;
+        const prefix = media.id || "media";
         if (target.id === "btnDownloadVideo") {
-          Downloader.downloadFile(media.videoUrl, `tiktok_${media.id}.mp4`, "video/mp4");
-          UI.showToast("Descargando MP4");
+          if (media.isYtDlp && window.AndroidBridge && typeof window.AndroidBridge.ytDlpDownload === "function") {
+            window.AndroidBridge.ytDlpDownload(media.rawUrl || media.id, "mp4");
+            UI.showToast("Descargando MP4 con yt-dlp...");
+          } else {
+            Downloader.downloadFile(media.videoUrl, `${prefix}.mp4`, "video/mp4");
+            UI.showToast("Descargando MP4");
+          }
         } else if (target.id === "btnDownloadImage") {
           const curImg = media.images[UI.currentImageIndex];
-          Downloader.downloadFile(curImg, `tiktok_${media.id}_${UI.currentImageIndex + 1}.jpg`, "image/jpeg");
+          Downloader.downloadFile(curImg, `${prefix}_${UI.currentImageIndex + 1}.jpg`, "image/jpeg");
           UI.showToast("Descargando Imagen");
         } else if (target.id === "btnDownloadImageWithMusic") {
           const curImg = media.images[UI.currentImageIndex];
@@ -961,25 +1093,30 @@
             UI.showToast("Sin m\xFAsica disponible");
             return;
           }
-          UI.showToast("Generando video con m\xFAsica...");
+          UI.showToast("Generando video...");
           target.disabled = true;
           VideoGenerator.generateAndSave(
             curImg,
             media.musicUrl,
-            `tiktok_${media.id}_${UI.currentImageIndex + 1}_music.mp4`
+            `${prefix}_${UI.currentImageIndex + 1}_audio.mp4`
           ).then(() => {
-            UI.showToast("Video con m\xFAsica descargado");
+            UI.showToast("Video descargado");
           }).catch((err) => {
             UI.showToast(err.message || "Error al generar video");
           }).finally(() => {
             target.disabled = false;
           });
         } else if (target.id === "btnDownloadAllImages") {
-          Downloader.downloadImages(media.images, `tiktok_${media.id}`);
+          Downloader.downloadImages(media.images, prefix);
           UI.showToast(`Descargando ${media.images.length} im\xE1genes`);
         } else if (target.id === "btnDownloadAudio") {
-          Downloader.downloadFile(media.musicUrl, `tiktok_${media.id}.mp3`, "audio/mpeg");
-          UI.showToast("Descargando Audio");
+          if (media.isYtDlp && window.AndroidBridge && typeof window.AndroidBridge.ytDlpDownload === "function") {
+            window.AndroidBridge.ytDlpDownload(media.rawUrl || media.id, "mp3");
+            UI.showToast("Descargando MP3 con yt-dlp...");
+          } else {
+            Downloader.downloadFile(media.musicUrl, `${prefix}_audio.mp3`, "audio/mpeg");
+            UI.showToast("Descargando Audio");
+          }
         }
       });
     }
@@ -1023,6 +1160,15 @@
         UI.setLoader(false);
       }
     }
+  };
+  window.onYtDlpProgress = (progress) => {
+    UI.showToast(`Descargando: ${Math.round(progress * 100)}%`);
+  };
+  window.onYtDlpComplete = (filename) => {
+    UI.showToast(`Guardado: ${filename}`);
+  };
+  window.onYtDlpError = (err) => {
+    UI.showToast(err || "Error en descarga");
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => App.init());

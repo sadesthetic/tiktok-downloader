@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         handleIntent(intent)
+        YtDlpManager.init(applicationContext)
 
         setContent {
             AndroidView(
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
 
                         loadUrl("file:///android_asset/index.html")
                         this@MainActivity.webView = this
+                        bridge.webView = this
                     }
                 }
             )
@@ -85,7 +87,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-            val regex = Regex("https?://(?:[a-zA-Z0-9-]+\\.)?tiktok\\.com/[^\\s\"')<>]+")
+            val regex = Regex("https?://[^\\s\"')<>]+")
             val matched = regex.find(text)?.value ?: text
             bridge.pendingUrl = matched
             webView?.evaluateJavascript("window.handleSharedUrl && window.handleSharedUrl('$matched');", null)

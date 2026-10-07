@@ -22,7 +22,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-class AndroidBridge(private val context: Context) {
+class AndroidBridge(private val context: Context, var webView: android.webkit.WebView? = null) {
     var pendingUrl: String? = null
 
     @JavascriptInterface
@@ -30,6 +30,16 @@ class AndroidBridge(private val context: Context) {
         val url = pendingUrl ?: ""
         pendingUrl = null
         return url
+    }
+
+    @JavascriptInterface
+    fun getAppVersion(): String {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: "1.0.7"
+        } catch (_: Exception) {
+            "1.0.7"
+        }
     }
 
     @JavascriptInterface
@@ -268,4 +278,60 @@ class AndroidBridge(private val context: Context) {
 
     @JavascriptInterface
     fun isNative(): Boolean = true
+
+    @JavascriptInterface
+    fun isYtDlpReady(): Boolean = YtDlpManager.isReady
+
+    @JavascriptInterface
+    fun ytDlpGetInfo(url: String): String {
+        return try {
+            YtDlpManager.getInfo(context, url)
+        } catch (e: Exception) {
+            org.json.JSONObject().apply {
+                put("error", e.message ?: "Error al obtener información")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun ytDlpDownload(url: String, format: String) {
+        val handler = Handler(Looper.getMainLooper())
+        handler.post {
+            Toast.makeText(context, "Iniciando descarga ($format)...", Toast.LENGTH_SHORT).show()
+        }
+        Thread {
+            try {
+                val file = YtDlpManager.download(context, url, format) { progress, text ->
+                    webView?.post {
+                        val cleanText = text.replace("'", "\\'").replace("\n", " ")
+                        webView?.evaluateJavascript(
+                            "window.onYtDlpProgress && window.onYtDlpProgress($progress, '$cleanText');",
+                            null
+                        )
+                    }
+                }
+                handler.post {
+                    Toast.makeText(context, "Descargado: ${file.name}", Toast.LENGTH_LONG).show()
+                }
+                webView?.post {
+                    val safeName = file.name.replace("'", "\\'")
+                    webView?.evaluateJavascript(
+                        "window.onYtDlpComplete && window.onYtDlpComplete('$safeName', '$format');",
+                        null
+                    )
+                }
+            } catch (e: Exception) {
+                handler.post {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+                webView?.post {
+                    val safeErr = (e.message ?: "Error al descargar").replace("'", "\\'")
+                    webView?.evaluateJavascript(
+                        "window.onYtDlpError && window.onYtDlpError('$safeErr');",
+                        null
+                    )
+                }
+            }
+        }.start()
+    }
 }

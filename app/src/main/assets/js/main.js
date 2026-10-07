@@ -109,12 +109,18 @@ class App {
       if (!target || !UI.currentMedia) return;
 
       const media = UI.currentMedia;
+      const prefix = media.id || 'media';
       if (target.id === 'btnDownloadVideo') {
-        Downloader.downloadFile(media.videoUrl, `tiktok_${media.id}.mp4`, 'video/mp4');
-        UI.showToast('Descargando MP4');
+        if (media.isYtDlp && window.AndroidBridge && typeof window.AndroidBridge.ytDlpDownload === 'function') {
+          window.AndroidBridge.ytDlpDownload(media.rawUrl || media.id, 'mp4');
+          UI.showToast('Descargando MP4 con yt-dlp...');
+        } else {
+          Downloader.downloadFile(media.videoUrl, `${prefix}.mp4`, 'video/mp4');
+          UI.showToast('Descargando MP4');
+        }
       } else if (target.id === 'btnDownloadImage') {
         const curImg = media.images[UI.currentImageIndex];
-        Downloader.downloadFile(curImg, `tiktok_${media.id}_${UI.currentImageIndex + 1}.jpg`, 'image/jpeg');
+        Downloader.downloadFile(curImg, `${prefix}_${UI.currentImageIndex + 1}.jpg`, 'image/jpeg');
         UI.showToast('Descargando Imagen');
       } else if (target.id === 'btnDownloadImageWithMusic') {
         const curImg = media.images[UI.currentImageIndex];
@@ -122,25 +128,30 @@ class App {
           UI.showToast('Sin música disponible');
           return;
         }
-        UI.showToast('Generando video con música...');
+        UI.showToast('Generando video...');
         target.disabled = true;
         VideoGenerator.generateAndSave(
           curImg,
           media.musicUrl,
-          `tiktok_${media.id}_${UI.currentImageIndex + 1}_music.mp4`
+          `${prefix}_${UI.currentImageIndex + 1}_audio.mp4`
         ).then(() => {
-          UI.showToast('Video con música descargado');
+          UI.showToast('Video descargado');
         }).catch((err) => {
           UI.showToast(err.message || 'Error al generar video');
         }).finally(() => {
           target.disabled = false;
         });
       } else if (target.id === 'btnDownloadAllImages') {
-        Downloader.downloadImages(media.images, `tiktok_${media.id}`);
+        Downloader.downloadImages(media.images, prefix);
         UI.showToast(`Descargando ${media.images.length} imágenes`);
       } else if (target.id === 'btnDownloadAudio') {
-        Downloader.downloadFile(media.musicUrl, `tiktok_${media.id}.mp3`, 'audio/mpeg');
-        UI.showToast('Descargando Audio');
+        if (media.isYtDlp && window.AndroidBridge && typeof window.AndroidBridge.ytDlpDownload === 'function') {
+          window.AndroidBridge.ytDlpDownload(media.rawUrl || media.id, 'mp3');
+          UI.showToast('Descargando MP3 con yt-dlp...');
+        } else {
+          Downloader.downloadFile(media.musicUrl, `${prefix}_audio.mp3`, 'audio/mpeg');
+          UI.showToast('Descargando Audio');
+        }
       }
     });
   }
@@ -189,6 +200,16 @@ class App {
     }
   }
 }
+
+window.onYtDlpProgress = (progress) => {
+  UI.showToast(`Descargando: ${Math.round(progress * 100)}%`);
+};
+window.onYtDlpComplete = (filename) => {
+  UI.showToast(`Guardado: ${filename}`);
+};
+window.onYtDlpError = (err) => {
+  UI.showToast(err || 'Error en descarga');
+};
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => App.init());

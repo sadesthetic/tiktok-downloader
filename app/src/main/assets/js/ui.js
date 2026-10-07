@@ -120,16 +120,23 @@ export class UI {
     } else {
       if (badge) {
         badge.style.display = 'flex';
-        badge.innerHTML = `${Icons.video} <span>MP4</span>`;
+        badge.innerHTML = `${Icons.video} <span>${data.isYtDlp ? 'yt-dlp' : 'MP4'}</span>`;
       }
 
-      const video = document.createElement('video');
-      video.className = 'media-video';
-      video.src = data.videoUrl;
-      video.poster = data.cover;
-      video.controls = true;
-      video.playsInline = true;
-      content.appendChild(video);
+      if (data.videoUrl) {
+        const video = document.createElement('video');
+        video.className = 'media-video';
+        video.src = data.videoUrl;
+        video.poster = data.cover;
+        video.controls = true;
+        video.playsInline = true;
+        content.appendChild(video);
+      } else if (data.cover) {
+        const img = document.createElement('img');
+        img.className = 'media-image';
+        img.src = data.cover;
+        content.appendChild(img);
+      }
 
       const btnDlVideo = document.createElement('button');
       btnDlVideo.className = 'btn-primary';
@@ -139,16 +146,14 @@ export class UI {
       const subRow = document.createElement('div');
       subRow.className = 'action-row';
 
-      if (data.musicUrl) {
-        const btnMusic = document.createElement('button');
-        btnMusic.className = 'btn-secondary';
-        btnMusic.id = 'btnDownloadAudio';
-        btnMusic.innerHTML = `${Icons.music} <span>Audio</span>`;
-        subRow.appendChild(btnMusic);
-      }
+      const btnMusic = document.createElement('button');
+      btnMusic.className = 'btn-secondary';
+      btnMusic.id = 'btnDownloadAudio';
+      btnMusic.innerHTML = `${Icons.music} <span>Descargar MP3</span>`;
+      subRow.appendChild(btnMusic);
 
       actions.appendChild(btnDlVideo);
-      if (subRow.children.length > 0) actions.appendChild(subRow);
+      actions.appendChild(subRow);
     }
 
     card.classList.add('active');

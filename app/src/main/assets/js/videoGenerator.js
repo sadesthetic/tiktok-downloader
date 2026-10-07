@@ -47,14 +47,20 @@ export class VideoGenerator {
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
-    const duration = Math.min(audioBuffer.duration || 10, 15);
+    const maxDuration = 40;
+    const duration = Math.min(audioBuffer.duration || maxDuration, maxDuration);
 
     return new Promise((resolve, reject) => {
       let animId;
       const startTime = performance.now();
+      let frame = 0;
 
       const drawLoop = () => {
+        frame++;
         ctx.drawImage(img, 0, 0, w, h);
+        ctx.fillStyle = (frame % 2 === 0) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.002)';
+        ctx.fillRect(0, 0, 1, 1);
+
         const elapsed = (performance.now() - startTime) / 1000;
         if (onProgress) onProgress(Math.min(elapsed / duration, 1));
         if (elapsed < duration) {
@@ -62,7 +68,20 @@ export class VideoGenerator {
         }
       };
 
+      let timer;
+      const finish = () => {
+        if (recorder.state === 'recording') {
+          try { source.stop(); } catch {}
+          recorder.stop();
+        }
+      };
+
+      source.onended = () => {
+        finish();
+      };
+
       recorder.onstop = async () => {
+        clearTimeout(timer);
         cancelAnimationFrame(animId);
         audioCtx.close().catch(() => {});
         const blob = new Blob(chunks, { type: mimeType });
@@ -73,6 +92,7 @@ export class VideoGenerator {
       };
 
       recorder.onerror = (e) => {
+        clearTimeout(timer);
         cancelAnimationFrame(animId);
         audioCtx.close().catch(() => {});
         reject(e.error || new Error('Error al grabar video'));
@@ -82,12 +102,7 @@ export class VideoGenerator {
       source.start(0);
       drawLoop();
 
-      setTimeout(() => {
-        if (recorder.state === 'recording') {
-          source.stop();
-          recorder.stop();
-        }
-      }, duration * 1000);
+      timer = setTimeout(finish, (duration + 0.2) * 1000);
     });
   }
 
