@@ -14,7 +14,6 @@ export class UI {
     set('btnPaste', Icons.clipboard);
     set('btnSubmit', Icons.arrowRight);
     set('btnCheckUpdate', Icons.refresh);
-    set('btnToggleHistory', Icons.history);
     set('btnSettings', Icons.settings);
     set('btnCloseSettings', Icons.close);
     set('btnClearHistory', Icons.trash);

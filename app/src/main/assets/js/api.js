@@ -22,33 +22,51 @@ export class TikTokApi {
       } catch {}
     }
 
+    let ytDlpError = null;
     if (window.AndroidBridge && typeof window.AndroidBridge.ytDlpGetInfo === 'function') {
       try {
         const jsonStr = window.AndroidBridge.ytDlpGetInfo(validUrl);
         const info = JSON.parse(jsonStr);
-        if (info && !info.error) {
-          return {
-            id: info.id || Date.now().toString(),
-            title: info.title || 'Video',
-            cover: info.cover || '',
-            isImages: false,
-            images: [],
-            videoUrl: info.url || '',
-            musicUrl: '',
-            isYtDlp: true,
-            rawUrl: validUrl,
-            author: {
-              name: info.uploader || 'yt-dlp',
-              handle: '',
-              avatar: info.cover || ''
-            }
-          };
+        if (info) {
+          if (!info.error) {
+            return {
+              id: info.id || Date.now().toString(),
+              title: info.title || 'Video',
+              cover: info.cover || '',
+              isImages: false,
+              images: [],
+              videoUrl: info.url || '',
+              musicUrl: '',
+              isYtDlp: true,
+              rawUrl: validUrl,
+              author: {
+                name: info.uploader || 'yt-dlp',
+                handle: '',
+                avatar: info.cover || ''
+              }
+            };
+          } else {
+            ytDlpError = info.error;
+          }
         }
-      } catch {}
+      } catch (e) {
+        ytDlpError = e.message;
+      }
     }
 
     if (ExperimentalApi.isYouTube(validUrl) || ExperimentalApi.isInstagram(validUrl)) {
-      return ExperimentalApi.fetchMedia(validUrl);
+      try {
+        return await ExperimentalApi.fetchMedia(validUrl);
+      } catch (expErr) {
+        if (ytDlpError) {
+          throw new Error('Error al extraer video. Actualiza yt-dlp en Configuración.');
+        }
+        throw expErr;
+      }
+    }
+
+    if (ytDlpError) {
+      throw new Error('Error de yt-dlp. Actualiza el motor en Configuración.');
     }
 
     throw new Error('No se pudo procesar el enlace');

@@ -36,9 +36,9 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
     fun getAppVersion(): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.7"
+            pInfo.versionName ?: "1.0.9"
         } catch (_: Exception) {
-            "1.0.7"
+            "1.0.9"
         }
     }
 
@@ -197,21 +197,24 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode else pInfo.versionCode.toLong()
         } catch (_: Exception) { 0L }
 
-        if (apkFile.exists() && apkFile.length() > 1_000_000L) {
-            val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-            if (archiveInfo != null) {
-                val apkCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archiveInfo.longVersionCode else archiveInfo.versionCode.toLong()
-                if (apkCode > currentCode) {
-                    handler.post {
-                        Toast.makeText(context, "Abriendo instalador...", Toast.LENGTH_SHORT).show()
-                        openApkInstaller(apkFile)
+        if (apkFile.exists()) {
+            if (apkFile.length() > 1_000_000L) {
+                val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+                if (archiveInfo != null) {
+                    val apkCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archiveInfo.longVersionCode else archiveInfo.versionCode.toLong()
+                    if (apkCode > currentCode) {
+                        handler.post {
+                            Toast.makeText(context, "Abriendo instalador...", Toast.LENGTH_SHORT).show()
+                            openApkInstaller(apkFile)
+                        }
+                        webView?.post {
+                            webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
+                        }
+                        return
                     }
-                    webView?.post {
-                        webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
-                    }
-                    return
                 }
             }
+            apkFile.delete()
         }
 
         handler.post {
@@ -227,6 +230,8 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                 connection.instanceFollowRedirects = true
                 connection.connectTimeout = 15000
                 connection.readTimeout = 30000
+                connection.setRequestProperty("Cache-Control", "no-cache, no-store")
+                connection.setRequestProperty("Pragma", "no-cache")
                 connection.connect()
 
                 if (connection.responseCode !in 200..299) {
@@ -286,6 +291,7 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
 
     private fun openApkInstaller(apkFile: File) {
         try {
+            apkFile.setReadable(true, false)
             val apkUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.provider",
@@ -296,6 +302,16 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+
+            val resolveLists = context.packageManager.queryIntentActivities(installIntent, 0)
+            for (resolveInfo in resolveLists) {
+                context.grantUriPermission(
+                    resolveInfo.activityInfo.packageName,
+                    apkUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
             }
 
             context.startActivity(installIntent)
@@ -356,6 +372,56 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                     val safeErr = (e.message ?: "Error al descargar").replace("'", "\\'")
                     webView?.evaluateJavascript(
                         "window.onYtDlpError && window.onYtDlpError('$safeErr');",
+                        null
+                    )
+                }
+            }
+        }.start()
+    }
+
+    @JavascriptInterface
+    fun getYtDlpVersion(): String {
+        return try {
+            YtDlpManager.getVersion(context) ?: "Desconocida"
+        } catch (e: Exception) {
+            "Desconocida"
+        }
+    }
+
+    @JavascriptInterface
+    fun updateYtDlp() {
+        val handler = Handler(Looper.getMainLooper())
+        handler.post {
+            Toast.makeText(context, "Verificando actualización de yt-dlp...", Toast.LENGTH_SHORT).show()
+        }
+        Thread {
+            try {
+                val (status, version) = YtDlpManager.updateYtDlp(context)
+                val msg = if (status == "DONE") {
+                    "yt-dlp actualizado a la versión $version"
+                } else {
+                    "yt-dlp ya está en la última versión ($version)"
+                }
+                handler.post {
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+                webView?.post {
+                    val safeVer = version.replace("'", "\\'")
+                    val safeStatus = status.replace("'", "\\'")
+                    webView?.evaluateJavascript(
+                        "window.onYtDlpUpdateComplete && window.onYtDlpUpdateComplete('$safeStatus', '$safeVer');",
+                        null
+                    )
+                }
+            } catch (e: Exception) {
+                val err = e.message ?: "Error al actualizar yt-dlp"
+                handler.post {
+                    Toast.makeText(context, "Error: $err", Toast.LENGTH_LONG).show()
+                }
+                webView?.post {
+                    val safeErr = err.replace("'", "\\'")
+                    webView?.evaluateJavascript(
+                        "window.onYtDlpUpdateError && window.onYtDlpUpdateError('$safeErr');",
                         null
                     )
                 }

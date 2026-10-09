@@ -231,33 +231,49 @@
         } catch {
         }
       }
+      let ytDlpError = null;
       if (window.AndroidBridge && typeof window.AndroidBridge.ytDlpGetInfo === "function") {
         try {
           const jsonStr = window.AndroidBridge.ytDlpGetInfo(validUrl);
           const info = JSON.parse(jsonStr);
-          if (info && !info.error) {
-            return {
-              id: info.id || Date.now().toString(),
-              title: info.title || "Video",
-              cover: info.cover || "",
-              isImages: false,
-              images: [],
-              videoUrl: info.url || "",
-              musicUrl: "",
-              isYtDlp: true,
-              rawUrl: validUrl,
-              author: {
-                name: info.uploader || "yt-dlp",
-                handle: "",
-                avatar: info.cover || ""
-              }
-            };
+          if (info) {
+            if (!info.error) {
+              return {
+                id: info.id || Date.now().toString(),
+                title: info.title || "Video",
+                cover: info.cover || "",
+                isImages: false,
+                images: [],
+                videoUrl: info.url || "",
+                musicUrl: "",
+                isYtDlp: true,
+                rawUrl: validUrl,
+                author: {
+                  name: info.uploader || "yt-dlp",
+                  handle: "",
+                  avatar: info.cover || ""
+                }
+              };
+            } else {
+              ytDlpError = info.error;
+            }
           }
-        } catch {
+        } catch (e) {
+          ytDlpError = e.message;
         }
       }
       if (ExperimentalApi.isYouTube(validUrl) || ExperimentalApi.isInstagram(validUrl)) {
-        return ExperimentalApi.fetchMedia(validUrl);
+        try {
+          return await ExperimentalApi.fetchMedia(validUrl);
+        } catch (expErr) {
+          if (ytDlpError) {
+            throw new Error("Error al extraer video. Actualiza yt-dlp en Configuraci\xF3n.");
+          }
+          throw expErr;
+        }
+      }
+      if (ytDlpError) {
+        throw new Error("Error de yt-dlp. Actualiza el motor en Configuraci\xF3n.");
       }
       throw new Error("No se pudo procesar el enlace");
     }
@@ -397,49 +413,6 @@
     }
   };
 
-  // app/src/main/assets/js/settings.js
-  var Settings = class {
-    static modal = null;
-    static toggleBtn = null;
-    static chkExp = null;
-    static init() {
-      this.modal = document.getElementById("settingsModal");
-      this.toggleBtn = document.getElementById("btnSettings");
-      this.chkExp = document.getElementById("chkExperimental");
-      const closeBtn = document.getElementById("btnCloseSettings");
-      if (this.chkExp) {
-        this.chkExp.checked = Storage.isExperimental();
-        this.chkExp.addEventListener("change", (e) => {
-          Storage.setExperimental(e.target.checked);
-        });
-      }
-      if (this.toggleBtn) {
-        this.toggleBtn.addEventListener("click", () => this.open());
-      }
-      if (closeBtn) {
-        closeBtn.addEventListener("click", () => this.close());
-      }
-      if (this.modal) {
-        this.modal.addEventListener("click", (e) => {
-          if (e.target === this.modal) this.close();
-        });
-      }
-    }
-    static open() {
-      if (!this.modal) return;
-      if (this.chkExp) this.chkExp.checked = Storage.isExperimental();
-      this.modal.style.display = "flex";
-      requestAnimationFrame(() => this.modal.classList.add("show"));
-    }
-    static close() {
-      if (!this.modal) return;
-      this.modal.classList.remove("show");
-      setTimeout(() => {
-        this.modal.style.display = "none";
-      }, 200);
-    }
-  };
-
   // app/src/main/assets/js/icons.js
   var Icons = {
     clipboard: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
@@ -472,7 +445,6 @@
       set("btnPaste", Icons.clipboard);
       set("btnSubmit", Icons.arrowRight);
       set("btnCheckUpdate", Icons.refresh);
-      set("btnToggleHistory", Icons.history);
       set("btnSettings", Icons.settings);
       set("btnCloseSettings", Icons.close);
       set("btnClearHistory", Icons.trash);
@@ -638,10 +610,139 @@
     }
   };
 
+  // app/src/main/assets/js/settings.js
+  var Settings = class {
+    static modal = null;
+    static toggleBtn = null;
+    static chkExp = null;
+    static btnUpdateYt = null;
+    static ytdlpVersionLabel = null;
+    static ytdlpStatusText = null;
+    static isUpdating = false;
+    static init() {
+      this.modal = document.getElementById("settingsModal");
+      this.toggleBtn = document.getElementById("btnSettings");
+      this.chkExp = document.getElementById("chkExperimental");
+      this.btnUpdateYt = document.getElementById("btnUpdateYtDlp");
+      this.ytdlpVersionLabel = document.getElementById("ytdlpVersionLabel");
+      this.ytdlpStatusText = document.getElementById("ytdlpStatusText");
+      const closeBtn = document.getElementById("btnCloseSettings");
+      if (this.chkExp) {
+        this.chkExp.checked = Storage.isExperimental();
+        this.chkExp.addEventListener("change", (e) => {
+          Storage.setExperimental(e.target.checked);
+        });
+      }
+      if (this.toggleBtn) {
+        this.toggleBtn.addEventListener("click", () => this.open());
+      }
+      if (closeBtn) {
+        closeBtn.addEventListener("click", () => this.close());
+      }
+      if (this.modal) {
+        this.modal.addEventListener("click", (e) => {
+          if (e.target === this.modal) this.close();
+        });
+      }
+      if (this.btnUpdateYt) {
+        this.btnUpdateYt.addEventListener("click", () => this.handleUpdateYtDlp());
+      }
+      window.onYtDlpUpdateComplete = (status, version) => {
+        this.onUpdateComplete(status, version);
+      };
+      window.onYtDlpUpdateError = (error) => {
+        this.onUpdateError(error);
+      };
+    }
+    static refreshYtDlpVersion() {
+      if (!this.ytdlpVersionLabel) return;
+      try {
+        if (window.AndroidBridge && typeof window.AndroidBridge.getYtDlpVersion === "function") {
+          const ver = window.AndroidBridge.getYtDlpVersion();
+          if (ver && ver !== "Error" && ver !== "Desconocida") {
+            this.ytdlpVersionLabel.textContent = `Versi\xF3n: ${ver}`;
+            return;
+          }
+        }
+      } catch {
+      }
+      this.ytdlpVersionLabel.textContent = "Versi\xF3n: Disponible (Nativo)";
+    }
+    static handleUpdateYtDlp() {
+      if (this.isUpdating) return;
+      this.isUpdating = true;
+      if (this.btnUpdateYt) {
+        this.btnUpdateYt.disabled = true;
+        this.btnUpdateYt.classList.add("is-loading");
+        const textSpan = document.getElementById("btnUpdateYtDlpText");
+        if (textSpan) textSpan.textContent = "Verificando...";
+      }
+      this.showStatus("Buscando actualizaci\xF3n...", "info");
+      if (window.AndroidBridge && typeof window.AndroidBridge.updateYtDlp === "function") {
+        window.AndroidBridge.updateYtDlp();
+      } else {
+        setTimeout(() => {
+          this.onUpdateComplete("ALREADY_UP_TO_DATE", "Web Simulado");
+        }, 1e3);
+      }
+    }
+    static onUpdateComplete(status, version) {
+      this.isUpdating = false;
+      if (this.btnUpdateYt) {
+        this.btnUpdateYt.disabled = false;
+        this.btnUpdateYt.classList.remove("is-loading");
+        const textSpan = document.getElementById("btnUpdateYtDlpText");
+        if (textSpan) textSpan.textContent = "Verificar actualizaci\xF3n";
+      }
+      if (version && this.ytdlpVersionLabel) {
+        this.ytdlpVersionLabel.textContent = `Versi\xF3n: ${version}`;
+      }
+      if (status === "DONE") {
+        this.showStatus(`\xA1Actualizado a versi\xF3n ${version}!`, "success");
+        UI.showToast(`yt-dlp actualizado a ${version}`);
+      } else {
+        this.showStatus(`yt-dlp est\xE1 al d\xEDa (${version || "\xFAltima versi\xF3n"})`, "info");
+        UI.showToast("yt-dlp ya est\xE1 al d\xEDa");
+      }
+    }
+    static onUpdateError(error) {
+      this.isUpdating = false;
+      if (this.btnUpdateYt) {
+        this.btnUpdateYt.disabled = false;
+        this.btnUpdateYt.classList.remove("is-loading");
+        const textSpan = document.getElementById("btnUpdateYtDlpText");
+        if (textSpan) textSpan.textContent = "Reintentar verificaci\xF3n";
+      }
+      this.showStatus(`Error: ${error || "Fallo de red"}`, "error");
+      UI.showToast("Error al actualizar yt-dlp");
+    }
+    static showStatus(text, type) {
+      if (!this.ytdlpStatusText) return;
+      this.ytdlpStatusText.textContent = text;
+      this.ytdlpStatusText.className = `setting-status ${type}`;
+      this.ytdlpStatusText.style.display = "block";
+    }
+    static open() {
+      if (!this.modal) return;
+      if (this.chkExp) this.chkExp.checked = Storage.isExperimental();
+      this.refreshYtDlpVersion();
+      this.modal.style.display = "flex";
+      requestAnimationFrame(() => this.modal.classList.add("show"));
+    }
+    static close() {
+      if (!this.modal) return;
+      this.modal.classList.remove("show");
+      setTimeout(() => {
+        this.modal.style.display = "none";
+        if (this.ytdlpStatusText) this.ytdlpStatusText.style.display = "none";
+      }, 200);
+    }
+  };
+
   // app/src/main/assets/js/updater.js
   var Updater = class {
     static get CURRENT_VERSION() {
-      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.8";
+      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.9";
     }
     static REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
     static async checkUpdate() {
@@ -652,11 +753,13 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const isNewer = this.compare(data.version, current) > 0;
+        const rawUrl = data.downloadUrl || "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk";
+        const downloadUrl = rawUrl.includes("?") ? `${rawUrl}&t=${Date.now()}` : `${rawUrl}?t=${Date.now()}`;
         return {
           hasUpdate: isNewer,
           current,
           latest: data.version,
-          downloadUrl: data.downloadUrl || "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk"
+          downloadUrl
         };
       } catch {
         return {
@@ -818,7 +921,6 @@
       const btnSubmit = document.getElementById("btnSubmit");
       const btnPaste = document.getElementById("btnPaste");
       const btnCheckUpdate = document.getElementById("btnCheckUpdate");
-      const btnToggleHistory = document.getElementById("btnToggleHistory");
       const btnClearHistory = document.getElementById("btnClearHistory");
       const historyPanel = document.getElementById("historyPanel");
       let lastUpdateClick = 0;
@@ -890,10 +992,6 @@
         }
       } catch {
       }
-      btnToggleHistory.addEventListener("click", () => {
-        const isHidden = historyPanel.style.display === "none";
-        historyPanel.style.display = isHidden ? "flex" : "none";
-      });
       btnClearHistory.addEventListener("click", () => {
         Storage.clear();
         UI.renderHistory();

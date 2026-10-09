@@ -12,8 +12,8 @@ android {
         applicationId = "com.tiktok.downloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -23,6 +23,7 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

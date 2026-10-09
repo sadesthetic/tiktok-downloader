@@ -26,6 +26,11 @@ object YtDlpManager {
                 YoutubeDL.getInstance().init(context.applicationContext)
                 FFmpeg.getInstance().init(context.applicationContext)
                 isReady = true
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext, YoutubeDL.UpdateChannel.STABLE)
+                } catch (_: Exception) {
+                    // Ignorar fallos de red en actualización silenciosa inicial
+                }
             } catch (e: Exception) {
                 initError = e.message
                 isReady = false
@@ -86,12 +91,13 @@ object YtDlpManager {
             request.addOption("-x")
             request.addOption("--audio-format", "mp3")
         } else {
-            request.addOption("-f", "best/bestvideo+bestaudio")
+            request.addOption("-f", "bestvideo+bestaudio/best")
+            request.addOption("--merge-output-format", "mp4")
         }
 
         val processId = "dl_${System.currentTimeMillis()}"
         ytdl.execute(request, processId) { progress, _, text ->
-            onProgress(progress / 100f, text ?: "")
+            onProgress(progress / 100f, text)
         }
 
         val ext = if (format.lowercase() == "mp3") "mp3" else "mp4"
@@ -106,5 +112,26 @@ object YtDlpManager {
             null
         )
         return matched
+    }
+
+    fun getVersion(context: Context): String? {
+        ensureReady(context)
+        return try {
+            YoutubeDL.getInstance().version(context.applicationContext)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun updateYtDlp(context: Context): Pair<String, String> {
+        ensureReady(context)
+        val status = YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext, YoutubeDL.UpdateChannel.STABLE)
+        val ver = getVersion(context) ?: ""
+        val statusStr = when (status) {
+            YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "ALREADY_UP_TO_DATE"
+            YoutubeDL.UpdateStatus.DONE -> "DONE"
+            else -> status?.name ?: "UNKNOWN"
+        }
+        return Pair(statusStr, ver)
     }
 }

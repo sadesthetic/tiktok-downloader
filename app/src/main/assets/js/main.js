@@ -16,7 +16,6 @@ class App {
     const btnSubmit = document.getElementById('btnSubmit');
     const btnPaste = document.getElementById('btnPaste');
     const btnCheckUpdate = document.getElementById('btnCheckUpdate');
-    const btnToggleHistory = document.getElementById('btnToggleHistory');
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
 
@@ -94,11 +93,6 @@ class App {
         }
       }
     } catch {}
-
-    btnToggleHistory.addEventListener('click', () => {
-      const isHidden = historyPanel.style.display === 'none';
-      historyPanel.style.display = isHidden ? 'flex' : 'none';
-    });
 
     btnClearHistory.addEventListener('click', () => {
       Storage.clear();
