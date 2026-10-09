@@ -19,9 +19,27 @@ class App {
     const btnClearHistory = document.getElementById('btnClearHistory');
     const historyPanel = document.getElementById('historyPanel');
 
-    let lastUpdateClick = 0;
+    let isUpdating = false;
+    let lastReportedProgress = 0;
+
+    const updateModal = document.getElementById('updateModal');
+    const btnHideUpdateModal = document.getElementById('btnHideUpdateModal');
+    if (btnHideUpdateModal && updateModal) {
+      btnHideUpdateModal.addEventListener('click', () => {
+        updateModal.style.display = 'none';
+      });
+      updateModal.addEventListener('click', (e) => {
+        if (e.target === updateModal) updateModal.style.display = 'none';
+      });
+    }
+
     btnCheckUpdate.addEventListener('click', async () => {
-      const now = Date.now();
+      if (isUpdating) {
+        if (updateModal) updateModal.style.display = 'flex';
+        UI.showToast('Descarga en curso...');
+        return;
+      }
+
       btnCheckUpdate.style.transform = 'rotate(360deg)';
       btnCheckUpdate.style.transition = 'transform 0.6s ease';
       setTimeout(() => {
@@ -31,25 +49,35 @@ class App {
 
       const info = await Updater.checkUpdate();
       if (info.hasUpdate) {
+        isUpdating = true;
+        lastReportedProgress = 0;
+
+        const badge = document.getElementById('updateVersionBadge');
+        const bar = document.getElementById('updateProgressBar');
+        const pText = document.getElementById('updatePercentText');
+        const sText = document.getElementById('updateStatusText');
+        const bText = document.getElementById('updateBytesText');
+        const ringBar = document.getElementById('updateRingBar');
         const wrapper = document.getElementById('updateWrapper');
-        const bar = document.getElementById('updateRingBar');
+
+        if (badge) badge.textContent = `v${info.current} → v${info.latest}`;
+        if (bar) bar.style.width = '0%';
+        if (pText) pText.textContent = '0%';
+        if (sText) {
+          sText.textContent = 'Descargando actualización...';
+          sText.style.color = 'var(--text-main)';
+        }
+        if (bText) bText.textContent = 'Conectando con GitHub...';
         if (wrapper) wrapper.classList.add('downloading');
-        if (bar) bar.style.strokeDashoffset = '106.81';
+        if (ringBar) ringBar.style.strokeDashoffset = '106.81';
+        if (updateModal) updateModal.style.display = 'flex';
+
         Downloader.installUpdate(info.downloadUrl);
       } else if (info.error) {
-        UI.showToast('Sin conexión');
+        UI.showToast('Sin conexión a GitHub');
       } else {
-        if (now - lastUpdateClick < 2000) {
-          const wrapper = document.getElementById('updateWrapper');
-          const bar = document.getElementById('updateRingBar');
-          if (wrapper) wrapper.classList.add('downloading');
-          if (bar) bar.style.strokeDashoffset = '106.81';
-          Downloader.installUpdate(info.downloadUrl);
-        } else {
-          UI.showToast(`v${info.current} al día`);
-        }
+        UI.showToast(`v${info.current} al día`);
       }
-      lastUpdateClick = now;
     });
 
 
@@ -169,41 +197,106 @@ class App {
   }
 }
 
-window.onUpdateProgress = (progress) => {
+let globalMaxUpdateProgress = 0;
+
+window.onUpdateProgress = (progress, percent, dlMb, totalMb) => {
+  const pVal = Number(progress) || 0;
+  globalMaxUpdateProgress = Math.max(globalMaxUpdateProgress, Math.min(1, pVal));
+  const pInt = percent != null ? Math.max(0, Math.min(100, Math.round(percent))) : Math.round(globalMaxUpdateProgress * 100);
+
+  const modal = document.getElementById('updateModal');
+  const bar = document.getElementById('updateProgressBar');
+  const pText = document.getElementById('updatePercentText');
+  const sText = document.getElementById('updateStatusText');
+  const bText = document.getElementById('updateBytesText');
+  const ringBar = document.getElementById('updateRingBar');
   const wrapper = document.getElementById('updateWrapper');
-  const bar = document.getElementById('updateRingBar');
+
   if (wrapper) wrapper.classList.add('downloading');
-  if (bar) {
+  if (ringBar) {
     const circum = 106.81;
-    bar.style.strokeDashoffset = circum * (1 - Math.max(0, Math.min(1, progress)));
+    ringBar.style.strokeDashoffset = circum * (1 - globalMaxUpdateProgress);
+  }
+
+  if (bar) bar.style.width = `${pInt}%`;
+  if (pText) pText.textContent = `${pInt}%`;
+  if (sText) {
+    if (pInt >= 100) {
+      sText.textContent = 'Verificando APK e iniciando instalador...';
+      sText.style.color = '#25f4ee';
+    } else {
+      sText.textContent = 'Descargando actualización...';
+      sText.style.color = 'var(--text-main)';
+    }
+  }
+  if (bText) {
+    if (dlMb != null && totalMb != null && totalMb > 0) {
+      bText.textContent = `${Number(dlMb).toFixed(1)} MB / ${Number(totalMb).toFixed(1)} MB`;
+    } else {
+      bText.textContent = `${pInt}% descargado`;
+    }
   }
 };
 
 window.onUpdateComplete = () => {
+  globalMaxUpdateProgress = 1;
+  const modal = document.getElementById('updateModal');
+  const bar = document.getElementById('updateProgressBar');
+  const pText = document.getElementById('updatePercentText');
+  const sText = document.getElementById('updateStatusText');
+  const ringBar = document.getElementById('updateRingBar');
   const wrapper = document.getElementById('updateWrapper');
-  const bar = document.getElementById('updateRingBar');
-  if (bar) bar.style.strokeDashoffset = '0';
+
+  if (bar) bar.style.width = '100%';
+  if (pText) pText.textContent = '100%';
+  if (sText) {
+    sText.textContent = '¡Descarga completa! Abriendo instalador...';
+    sText.style.color = '#25f4ee';
+  }
+  if (ringBar) ringBar.style.strokeDashoffset = '0';
+
   setTimeout(() => {
+    if (modal) modal.style.display = 'none';
     if (wrapper) wrapper.classList.remove('downloading');
-    if (bar) bar.style.strokeDashoffset = '106.81';
-  }, 1200);
+    if (ringBar) ringBar.style.strokeDashoffset = '106.81';
+    globalMaxUpdateProgress = 0;
+  }, 2000);
 };
 
 window.onUpdateError = (err) => {
+  globalMaxUpdateProgress = 0;
+  const bar = document.getElementById('updateProgressBar');
+  const sText = document.getElementById('updateStatusText');
+  const ringBar = document.getElementById('updateRingBar');
   const wrapper = document.getElementById('updateWrapper');
-  const bar = document.getElementById('updateRingBar');
+
+  if (bar) bar.style.width = '0%';
+  if (sText) {
+    sText.textContent = `Error: ${err || 'No se pudo descargar'}`;
+    sText.style.color = '#fe2c55';
+  }
   if (wrapper) wrapper.classList.remove('downloading');
-  if (bar) bar.style.strokeDashoffset = '106.81';
-  UI.showToast(err || 'Error al actualizar');
+  if (ringBar) ringBar.style.strokeDashoffset = '106.81';
+  UI.showToast(err || 'Error al actualizar app');
 };
 
+let lastYtToastTime = 0;
+let lastYtPercent = -1;
 window.onYtDlpProgress = (progress) => {
-  UI.showToast(`Descargando: ${Math.round(progress * 100)}%`);
+  const pInt = Math.round((Number(progress) || 0) * 100);
+  const now = Date.now();
+  if (pInt !== lastYtPercent && (now - lastYtToastTime > 1200 || pInt >= 100 || pInt === 0)) {
+    lastYtToastTime = now;
+    lastYtPercent = pInt;
+    UI.showToast(`Descargando: ${pInt}%`);
+  }
 };
 window.onYtDlpComplete = (filename) => {
+  lastYtPercent = -1;
   UI.showToast(`Guardado: ${filename}`);
 };
 window.onYtDlpError = (err) => {
+  lastYtPercent = -1;
   UI.showToast(err || 'Error en descarga');
 };
 

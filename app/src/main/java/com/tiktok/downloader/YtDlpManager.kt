@@ -96,8 +96,13 @@ object YtDlpManager {
         }
 
         val processId = "dl_${System.currentTimeMillis()}"
+        var maxProgress = 0f
         ytdl.execute(request, processId) { progress, _, text ->
-            onProgress(progress / 100f, text)
+            val p = (progress / 100f).coerceIn(0f, 1f)
+            if (p >= maxProgress) {
+                maxProgress = p
+                onProgress(maxProgress, text)
+            }
         }
 
         val ext = if (format.lowercase() == "mp3") "mp3" else "mp4"

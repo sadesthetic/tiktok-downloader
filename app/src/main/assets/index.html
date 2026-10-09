@@ -114,6 +114,38 @@
     </div>
   </div>
 
+  <div class="modal-backdrop update-modal-backdrop" id="updateModal" style="display: none;">
+    <div class="modal-panel update-modal-panel">
+      <div class="update-modal-header">
+        <div class="update-modal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <div class="update-modal-titles">
+          <span class="update-modal-title">Actualización de App</span>
+          <span class="update-modal-subtitle" id="updateVersionBadge">Descargando última versión...</span>
+        </div>
+      </div>
+
+      <div class="update-progress-container">
+        <div class="update-progress-info">
+          <span class="update-status-label" id="updateStatusText">Descargando...</span>
+          <span class="update-percent-label" id="updatePercentText">0%</span>
+        </div>
+        <div class="update-progress-track">
+          <div class="update-progress-bar" id="updateProgressBar"></div>
+        </div>
+        <div class="update-meta-info">
+          <span id="updateBytesText">0.0 MB / -- MB</span>
+          <span class="update-pulse-dot"></span>
+        </div>
+      </div>
+
+      <div class="update-modal-actions">
+        <button class="btn-secondary" id="btnHideUpdateModal" type="button">Ocultar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script src="bundle.js"></script>

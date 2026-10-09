@@ -2,7 +2,7 @@ export class Updater {
   static get CURRENT_VERSION() {
     return (window.AndroidBridge && window.AndroidBridge.getAppVersion)
       ? window.AndroidBridge.getAppVersion()
-      : '1.0.9';
+      : '1.0.10';
   }
   static REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
 

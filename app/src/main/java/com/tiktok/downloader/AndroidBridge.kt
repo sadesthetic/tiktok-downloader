@@ -36,9 +36,9 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
     fun getAppVersion(): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.9"
+            pInfo.versionName ?: "1.0.10"
         } catch (_: Exception) {
-            "1.0.9"
+            "1.0.10"
         }
     }
 
@@ -175,13 +175,23 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
         }
     }
 
+    @Volatile
+    private var isDownloadingUpdate = false
+
     @JavascriptInterface
     fun installUpdate(url: String) {
         val handler = Handler(Looper.getMainLooper())
 
+        if (isDownloadingUpdate) {
+            handler.post {
+                Toast.makeText(context, "La actualización ya se está descargando", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             handler.post {
-                Toast.makeText(context, "Permite instalar apps desconocidas", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Permite instalar apps desconocidas para actualizar", Toast.LENGTH_LONG).show()
                 val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                     data = Uri.parse("package:${context.packageName}")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -191,86 +201,108 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
             return
         }
 
-        val apkFile = File(context.cacheDir, "update.apk")
-        val currentCode = try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode else pInfo.versionCode.toLong()
-        } catch (_: Exception) { 0L }
-
-        if (apkFile.exists()) {
-            if (apkFile.length() > 1_000_000L) {
-                val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-                if (archiveInfo != null) {
-                    val apkCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archiveInfo.longVersionCode else archiveInfo.versionCode.toLong()
-                    if (apkCode > currentCode) {
-                        handler.post {
-                            Toast.makeText(context, "Abriendo instalador...", Toast.LENGTH_SHORT).show()
-                            openApkInstaller(apkFile)
-                        }
-                        webView?.post {
-                            webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
-                        }
-                        return
-                    }
-                }
-            }
-            apkFile.delete()
+        isDownloadingUpdate = true
+        val updatesDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir, "updates").apply {
+            if (!exists()) mkdirs()
         }
+        val apkFile = File(updatesDir, "TikTokDownloader_update.apk")
+        val tempFile = File(updatesDir, "TikTokDownloader_update.tmp")
 
         handler.post {
-            Toast.makeText(context, "Descargando actualización...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Iniciando descarga de actualización...", Toast.LENGTH_SHORT).show()
         }
 
         Thread {
-            val tempFile = File(context.cacheDir, "update.apk.tmp")
             try {
                 if (tempFile.exists()) tempFile.delete()
+                if (apkFile.exists()) apkFile.delete()
 
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.instanceFollowRedirects = true
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
-                connection.setRequestProperty("Cache-Control", "no-cache, no-store")
-                connection.setRequestProperty("Pragma", "no-cache")
-                connection.connect()
+                var targetUrl = url
+                var connection: HttpURLConnection? = null
+                var redirects = 0
 
-                if (connection.responseCode !in 200..299) {
-                    throw Exception("HTTP ${connection.responseCode}")
+                while (redirects < 6) {
+                    val u = URL(targetUrl)
+                    val conn = u.openConnection() as HttpURLConnection
+                    conn.instanceFollowRedirects = false
+                    conn.connectTimeout = 20000
+                    conn.readTimeout = 40000
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 TikTokDownloader/${getAppVersion()}")
+                    conn.setRequestProperty("Accept-Encoding", "identity")
+                    conn.setRequestProperty("Cache-Control", "no-cache, no-store")
+                    conn.setRequestProperty("Pragma", "no-cache")
+                    conn.connect()
+
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location") ?: throw Exception("Redirección vacía HTTP $code")
+                        targetUrl = if (loc.startsWith("http")) loc else URL(u, loc).toString()
+                        conn.disconnect()
+                        redirects++
+                    } else if (code in 200..299) {
+                        connection = conn
+                        break
+                    } else {
+                        conn.disconnect()
+                        throw Exception("HTTP $code")
+                    }
                 }
 
+                val activeConn = connection ?: throw Exception("No se pudo conectar al servidor")
                 val totalBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    connection.contentLengthLong
+                    activeConn.contentLengthLong
                 } else {
-                    connection.contentLength.toLong()
+                    activeConn.contentLength.toLong()
                 }
 
                 var downloadedBytes = 0L
-                var lastReport = 0L
+                var lastReportTime = 0L
+                var maxProgressReported = 0.0
 
-                connection.inputStream.use { input ->
+                activeConn.inputStream.use { input ->
                     tempFile.outputStream().use { output ->
-                        val buffer = ByteArray(32 * 1024)
+                        val buffer = ByteArray(64 * 1024)
                         var bytesRead: Int
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             downloadedBytes += bytesRead
                             val now = System.currentTimeMillis()
-                            if (totalBytes > 0 && now - lastReport > 80) {
-                                lastReport = now
-                                val progress = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0)
-                                webView?.post {
-                                    webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress($progress);", null)
+
+                            if (totalBytes > 0) {
+                                val rawProgress = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0)
+                                if (rawProgress >= maxProgressReported && (now - lastReportTime > 50 || rawProgress >= 1.0)) {
+                                    maxProgressReported = rawProgress
+                                    lastReportTime = now
+                                    val percent = Math.round(maxProgressReported * 100.0).toInt()
+                                    val dlMb = downloadedBytes / (1024.0 * 1024.0)
+                                    val totalMb = totalBytes / (1024.0 * 1024.0)
+
+                                    webView?.post {
+                                        webView?.evaluateJavascript(
+                                            "window.onUpdateProgress && window.onUpdateProgress($maxProgressReported, $percent, $dlMb, $totalMb);",
+                                            null
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
+                activeConn.disconnect()
+
+                if (!tempFile.exists() || tempFile.length() < 1_000_000L) {
+                    throw Exception("Descarga incompleta (${tempFile.length()} bytes)")
+                }
+
                 if (apkFile.exists()) apkFile.delete()
-                tempFile.renameTo(apkFile)
+                if (!tempFile.renameTo(apkFile)) {
+                    tempFile.copyTo(apkFile, overwrite = true)
+                    tempFile.delete()
+                }
 
                 webView?.post {
-                    webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0); window.onUpdateComplete && window.onUpdateComplete();", null)
+                    webView?.evaluateJavascript("window.onUpdateProgress && window.onUpdateProgress(1.0, 100); window.onUpdateComplete && window.onUpdateComplete();", null)
                 }
 
                 handler.post {
@@ -278,18 +310,21 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                 }
             } catch (e: Exception) {
                 if (tempFile.exists()) tempFile.delete()
+                val safeErr = (e.message ?: "Error desconocido").replace("'", "\\'")
                 webView?.post {
-                    val safeErr = (e.message ?: "Error").replace("'", "\\'")
                     webView?.evaluateJavascript("window.onUpdateError && window.onUpdateError('$safeErr');", null)
                 }
                 handler.post {
-                    Toast.makeText(context, "Error al descargar: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Error al actualizar: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                isDownloadingUpdate = false
             }
         }.start()
     }
 
     private fun openApkInstaller(apkFile: File) {
+        val handler = Handler(Looper.getMainLooper())
         try {
             apkFile.setReadable(true, false)
             val apkUri = FileProvider.getUriForFile(
@@ -301,22 +336,40 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
 
-            val resolveLists = context.packageManager.queryIntentActivities(installIntent, 0)
-            for (resolveInfo in resolveLists) {
-                context.grantUriPermission(
-                    resolveInfo.activityInfo.packageName,
-                    apkUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+            val installerPackages = arrayOf(
+                "com.google.android.packageinstaller",
+                "com.android.packageinstaller",
+                "com.samsung.android.packageinstaller",
+                "com.miui.packageinstaller"
+            )
+            for (pkg in installerPackages) {
+                try {
+                    context.grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {}
             }
+
+            try {
+                val resolveLists = context.packageManager.queryIntentActivities(installIntent, 0)
+                for (resolveInfo in resolveLists) {
+                    context.grantUriPermission(
+                        resolveInfo.activityInfo.packageName,
+                        apkUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            } catch (_: Exception) {}
 
             context.startActivity(installIntent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Error al abrir instalador: ${e.message}", Toast.LENGTH_LONG).show()
+            handler.post {
+                Toast.makeText(context, "Error al abrir instalador: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
