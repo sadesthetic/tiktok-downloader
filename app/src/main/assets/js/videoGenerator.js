@@ -2,6 +2,52 @@ import { Downloader } from './downloader.js';
 
 export class VideoGenerator {
   static async generateAndSave(imageUrl, musicUrl, filename, onProgress) {
+    if (Downloader.isNative() && window.AndroidBridge && typeof window.AndroidBridge.mergeImageAudio === 'function') {
+      try {
+        return await this.generateNative(imageUrl, musicUrl, filename, onProgress);
+      } catch (err) {
+        console.warn('Fallo en fusión nativa, usando generador WebAudio en WebView:', err);
+      }
+    }
+    return this.generateInBrowser(imageUrl, musicUrl, filename, onProgress);
+  }
+
+  static generateNative(imageUrl, musicUrl, filename, onProgress) {
+    return new Promise((resolve, reject) => {
+      const prevProgress = window.onMergeProgress;
+      const prevComplete = window.onMergeComplete;
+      const prevError = window.onMergeError;
+
+      const cleanup = () => {
+        window.onMergeProgress = prevProgress;
+        window.onMergeComplete = prevComplete;
+        window.onMergeError = prevError;
+      };
+
+      window.onMergeProgress = (p, text) => {
+        if (onProgress) onProgress(p, text);
+      };
+
+      window.onMergeComplete = (savedName) => {
+        cleanup();
+        resolve(savedName);
+      };
+
+      window.onMergeError = (errMsg) => {
+        cleanup();
+        reject(new Error(errMsg || 'Error en codificación nativa'));
+      };
+
+      try {
+        window.AndroidBridge.mergeImageAudio(imageUrl, musicUrl, filename);
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    });
+  }
+
+  static async generateInBrowser(imageUrl, musicUrl, filename, onProgress) {
     const [img, audioData] = await Promise.all([
       this.loadImage(imageUrl),
       this.loadAudio(musicUrl)
@@ -47,8 +93,8 @@ export class VideoGenerator {
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
-    const maxDuration = 40;
-    const duration = Math.min(audioBuffer.duration || maxDuration, maxDuration);
+    // Usar la duración completa del audio disponible sin límite artificial
+    const duration = Math.max(audioBuffer.duration || 15, 1);
 
     return new Promise((resolve, reject) => {
       let animId;
@@ -58,8 +104,9 @@ export class VideoGenerator {
       const drawLoop = () => {
         frame++;
         ctx.drawImage(img, 0, 0, w, h);
-        ctx.fillStyle = (frame % 2 === 0) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.002)';
-        ctx.fillRect(0, 0, 1, 1);
+        // Garantizar variación visible a nivel de render para evitar throttling de captureStream
+        ctx.fillStyle = (frame % 2 === 0) ? '#000000' : '#010101';
+        ctx.fillRect(0, 0, 2, 2);
 
         const elapsed = (performance.now() - startTime) / 1000;
         if (onProgress) onProgress(Math.min(elapsed / duration, 1));
@@ -102,7 +149,7 @@ export class VideoGenerator {
       source.start(0);
       drawLoop();
 
-      timer = setTimeout(finish, (duration + 0.2) * 1000);
+      timer = setTimeout(finish, (duration + 0.3) * 1000);
     });
   }
 

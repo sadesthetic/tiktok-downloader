@@ -2,25 +2,71 @@ export class Updater {
   static get CURRENT_VERSION() {
     return (window.AndroidBridge && window.AndroidBridge.getAppVersion)
       ? window.AndroidBridge.getAppVersion()
-      : '1.0.10';
+      : '1.2.0';
   }
-  static REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
+
+  static get CURRENT_VERSION_CODE() {
+    return (window.AndroidBridge && window.AndroidBridge.getAppVersionCode)
+      ? window.AndroidBridge.getAppVersionCode()
+      : 13;
+  }
+
+  static GITHUB_API_URL = 'https://api.github.com/repos/sadesthetic/tiktok-downloader/contents/version.json';
+  static RAW_URL = 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json';
+
+  static async fetchManifest() {
+    const ts = Date.now();
+    // 1. Intentar primero con la API de GitHub (directo al árbol de Git, 0s cache de CDN)
+    try {
+      const resApi = await fetch(`${this.GITHUB_API_URL}?ref=main&_t=${ts}`, {
+        headers: {
+          'Accept': 'application/vnd.github.v3.raw',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        cache: 'no-store'
+      });
+      if (resApi.ok) {
+        const text = await resApi.text();
+        return JSON.parse(text);
+      }
+    } catch {}
+
+    // 2. Fallback a raw con encabezados anti-cache y parámetro único
+    const resRaw = await fetch(`${this.RAW_URL}?_nocache=${ts}`, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      },
+      cache: 'no-store'
+    });
+    if (!resRaw.ok) throw new Error(`HTTP ${resRaw.status}`);
+    return await resRaw.json();
+  }
 
   static async checkUpdate() {
     try {
       const current = this.CURRENT_VERSION;
-      const url = `${this.REMOTE_MANIFEST_URL}?t=${Date.now()}`;
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      
-      const isNewer = this.compare(data.version, current) > 0;
+      const currentCode = this.CURRENT_VERSION_CODE;
+      const data = await this.fetchManifest();
+
+      // Comparación por versionCode numérico (más fiable) y por semver
+      let isNewer = false;
+      if (typeof data.versionCode === 'number' && currentCode > 0) {
+        isNewer = data.versionCode > currentCode;
+      }
+      if (!isNewer) {
+        isNewer = this.compare(data.version, current) > 0;
+      }
+
       const rawUrl = data.downloadUrl || 'https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk';
-      const downloadUrl = rawUrl.includes('?') ? `${rawUrl}&t=${Date.now()}` : `${rawUrl}?t=${Date.now()}`;
+      const downloadUrl = rawUrl.includes('?') ? `${rawUrl}&_t=${Date.now()}` : `${rawUrl}?_t=${Date.now()}`;
+      
       return {
         hasUpdate: isNewer,
         current,
         latest: data.version,
+        latestCode: data.versionCode,
         downloadUrl
       };
     } catch {

@@ -36,9 +36,24 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
     fun getAppVersion(): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.10"
+            pInfo.versionName ?: "1.2.0"
         } catch (_: Exception) {
-            "1.0.10"
+            "1.2.0"
+        }
+    }
+
+    @JavascriptInterface
+    fun getAppVersionCode(): Int {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode
+            }
+        } catch (_: Exception) {
+            13
         }
     }
 
@@ -217,7 +232,7 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                 if (tempFile.exists()) tempFile.delete()
                 if (apkFile.exists()) apkFile.delete()
 
-                var targetUrl = url
+                var targetUrl = if (url.contains("?")) "$url&_cb=${System.currentTimeMillis()}" else "$url?_cb=${System.currentTimeMillis()}"
                 var connection: HttpURLConnection? = null
                 var redirects = 0
 
@@ -475,6 +490,45 @@ class AndroidBridge(private val context: Context, var webView: android.webkit.We
                     val safeErr = err.replace("'", "\\'")
                     webView?.evaluateJavascript(
                         "window.onYtDlpUpdateError && window.onYtDlpUpdateError('$safeErr');",
+                        null
+                    )
+                }
+            }
+        }.start()
+    }
+
+    @JavascriptInterface
+    fun mergeImageAudio(imageUrl: String, audioUrl: String, filename: String) {
+        val handler = Handler(Looper.getMainLooper())
+        handler.post {
+            Toast.makeText(context, "Generando video con audio completo...", Toast.LENGTH_SHORT).show()
+        }
+        Thread {
+            try {
+                val file = MediaMerger.mergeImageAndAudio(context, imageUrl, audioUrl, filename) { progress, text ->
+                    webView?.post {
+                        val cleanText = text.replace("'", "\\'").replace("\n", " ")
+                        webView?.evaluateJavascript(
+                            "window.onMergeProgress && window.onMergeProgress($progress, '$cleanText');",
+                            null
+                        )
+                    }
+                }
+                handler.post {
+                    Toast.makeText(context, "Video guardado: ${file.name}", Toast.LENGTH_LONG).show()
+                }
+                webView?.post {
+                    val safeName = file.name.replace("'", "\\'")
+                    webView?.evaluateJavascript(
+                        "window.onMergeComplete && window.onMergeComplete('$safeName');",
+                        null
+                    )
+                }
+            } catch (e: Exception) {
+                val safeErr = (e.message ?: "Error al combinar video y audio").replace("'", "\\'")
+                webView?.post {
+                    webView?.evaluateJavascript(
+                        "window.onMergeError && window.onMergeError('$safeErr');",
                         null
                     )
                 }

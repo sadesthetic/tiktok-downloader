@@ -298,19 +298,32 @@
         throw new Error(json?.msg || "No se pudo procesar");
       }
       const d = json.data;
-      const isImages = Array.isArray(d.images) && d.images.length > 0;
       const fixUrl = (u) => {
         if (!u) return "";
         return u.startsWith("http") ? u : `https://www.tikwm.com${u}`;
       };
+      const rawImages = Array.isArray(d.images) && d.images.length > 0 ? d.images.map(fixUrl) : [];
+      const coverUrl = fixUrl(d.origin_cover || d.cover);
+      const musicUrl = fixUrl(d.music_info?.play || d.music);
+      const videoUrl = fixUrl(d.hdplay || d.play);
+      const duration = typeof d.duration === "number" ? d.duration : 0;
+      const musicDuration = d.music_info?.duration || 0;
+      const isPhotoOrStory = rawImages.length > 0 || d.mimetype === "image" || duration <= 5 && !!coverUrl && !!musicUrl;
+      const finalImages = rawImages.length > 0 ? rawImages : isPhotoOrStory && coverUrl ? [coverUrl] : [];
+      const isImages = finalImages.length > 0;
+      const hasPhotoWithAudio = isPhotoOrStory && !!musicUrl && finalImages.length > 0;
       return {
         id: d.id,
         title: d.title || "",
-        cover: fixUrl(d.cover || d.origin_cover),
+        cover: coverUrl,
         isImages,
-        images: isImages ? d.images.map(fixUrl) : [],
-        videoUrl: fixUrl(d.hdplay || d.play),
-        musicUrl: fixUrl(d.music_info?.play || d.music),
+        images: finalImages,
+        videoUrl,
+        musicUrl,
+        hasPhotoWithAudio,
+        isPhotoStory: isPhotoOrStory,
+        duration,
+        musicDuration,
         author: {
           name: d.author?.nickname || "TikTok User",
           handle: d.author?.unique_id ? `@${d.author.unique_id}` : "",
@@ -481,7 +494,8 @@
       if (data.isImages) {
         if (badge) {
           badge.style.display = "flex";
-          badge.innerHTML = `${Icons.image} <span>1 / ${data.images.length}</span>`;
+          const badgeText = data.musicUrl ? data.images.length > 1 ? `${data.images.length} Fotos \u2022 Audio Completo` : "Foto \u2022 Audio Completo" : `1 / ${data.images.length}`;
+          badge.innerHTML = `${Icons.image} <span>${badgeText}</span>`;
         }
         const img = document.createElement("img");
         img.id = "activeImage";
@@ -500,32 +514,52 @@
           viewer.appendChild(btnPrev);
           viewer.appendChild(btnNext);
         }
-        const btnDlCurrent = document.createElement("button");
-        btnDlCurrent.className = "btn-primary";
-        btnDlCurrent.id = "btnDownloadImage";
-        btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Imagen</span>`;
         const subRow = document.createElement("div");
         subRow.className = "action-row";
-        if (data.images.length > 1) {
-          const btnDlAll = document.createElement("button");
-          btnDlAll.className = "btn-secondary";
-          btnDlAll.id = "btnDownloadAllImages";
-          btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
-          subRow.appendChild(btnDlAll);
-        }
         if (data.musicUrl) {
           const btnWithMusic = document.createElement("button");
-          btnWithMusic.className = "btn-secondary";
+          btnWithMusic.className = "btn-primary";
           btnWithMusic.id = "btnDownloadImageWithMusic";
-          btnWithMusic.innerHTML = `${Icons.videoMusic} <span>Con m\xFAsica</span>`;
-          subRow.appendChild(btnWithMusic);
+          btnWithMusic.innerHTML = `${Icons.videoMusic} <span>Video con audio completo</span>`;
+          actions.appendChild(btnWithMusic);
+          const btnDlCurrent = document.createElement("button");
+          btnDlCurrent.className = "btn-secondary";
+          btnDlCurrent.id = "btnDownloadImage";
+          btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Foto</span>`;
+          subRow.appendChild(btnDlCurrent);
+          if (data.images.length > 1) {
+            const btnDlAll = document.createElement("button");
+            btnDlAll.className = "btn-secondary";
+            btnDlAll.id = "btnDownloadAllImages";
+            btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
+            subRow.appendChild(btnDlAll);
+          }
           const btnMusic = document.createElement("button");
           btnMusic.className = "btn-secondary";
           btnMusic.id = "btnDownloadAudio";
-          btnMusic.innerHTML = `${Icons.music} <span>Audio</span>`;
+          btnMusic.innerHTML = `${Icons.music} <span>Audio (MP3)</span>`;
           subRow.appendChild(btnMusic);
+          if (data.videoUrl && data.duration <= 5) {
+            const btnShort = document.createElement("button");
+            btnShort.className = "btn-secondary";
+            btnShort.id = "btnDownloadShortVideo";
+            btnShort.innerHTML = `${Icons.video} <span>Video 4s</span>`;
+            subRow.appendChild(btnShort);
+          }
+        } else {
+          const btnDlCurrent = document.createElement("button");
+          btnDlCurrent.className = "btn-primary";
+          btnDlCurrent.id = "btnDownloadImage";
+          btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Imagen</span>`;
+          actions.appendChild(btnDlCurrent);
+          if (data.images.length > 1) {
+            const btnDlAll = document.createElement("button");
+            btnDlAll.className = "btn-secondary";
+            btnDlAll.id = "btnDownloadAllImages";
+            btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
+            subRow.appendChild(btnDlAll);
+          }
         }
-        actions.appendChild(btnDlCurrent);
         if (subRow.children.length > 0) actions.appendChild(subRow);
       } else {
         if (badge) {
@@ -742,23 +776,59 @@
   // app/src/main/assets/js/updater.js
   var Updater = class {
     static get CURRENT_VERSION() {
-      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.0.10";
+      return window.AndroidBridge && window.AndroidBridge.getAppVersion ? window.AndroidBridge.getAppVersion() : "1.2.0";
     }
-    static REMOTE_MANIFEST_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
+    static get CURRENT_VERSION_CODE() {
+      return window.AndroidBridge && window.AndroidBridge.getAppVersionCode ? window.AndroidBridge.getAppVersionCode() : 13;
+    }
+    static GITHUB_API_URL = "https://api.github.com/repos/sadesthetic/tiktok-downloader/contents/version.json";
+    static RAW_URL = "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/version.json";
+    static async fetchManifest() {
+      const ts = Date.now();
+      try {
+        const resApi = await fetch(`${this.GITHUB_API_URL}?ref=main&_t=${ts}`, {
+          headers: {
+            "Accept": "application/vnd.github.v3.raw",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache"
+          },
+          cache: "no-store"
+        });
+        if (resApi.ok) {
+          const text = await resApi.text();
+          return JSON.parse(text);
+        }
+      } catch {
+      }
+      const resRaw = await fetch(`${this.RAW_URL}?_nocache=${ts}`, {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        },
+        cache: "no-store"
+      });
+      if (!resRaw.ok) throw new Error(`HTTP ${resRaw.status}`);
+      return await resRaw.json();
+    }
     static async checkUpdate() {
       try {
         const current = this.CURRENT_VERSION;
-        const url = `${this.REMOTE_MANIFEST_URL}?t=${Date.now()}`;
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const isNewer = this.compare(data.version, current) > 0;
+        const currentCode = this.CURRENT_VERSION_CODE;
+        const data = await this.fetchManifest();
+        let isNewer = false;
+        if (typeof data.versionCode === "number" && currentCode > 0) {
+          isNewer = data.versionCode > currentCode;
+        }
+        if (!isNewer) {
+          isNewer = this.compare(data.version, current) > 0;
+        }
         const rawUrl = data.downloadUrl || "https://raw.githubusercontent.com/sadesthetic/tiktok-downloader/main/TikTokDownloader.apk";
-        const downloadUrl = rawUrl.includes("?") ? `${rawUrl}&t=${Date.now()}` : `${rawUrl}?t=${Date.now()}`;
+        const downloadUrl = rawUrl.includes("?") ? `${rawUrl}&_t=${Date.now()}` : `${rawUrl}?_t=${Date.now()}`;
         return {
           hasUpdate: isNewer,
           current,
           latest: data.version,
+          latestCode: data.versionCode,
           downloadUrl
         };
       } catch {
@@ -786,6 +856,45 @@
   // app/src/main/assets/js/videoGenerator.js
   var VideoGenerator = class {
     static async generateAndSave(imageUrl, musicUrl, filename, onProgress) {
+      if (Downloader.isNative() && window.AndroidBridge && typeof window.AndroidBridge.mergeImageAudio === "function") {
+        try {
+          return await this.generateNative(imageUrl, musicUrl, filename, onProgress);
+        } catch (err) {
+          console.warn("Fallo en fusi\xF3n nativa, usando generador WebAudio en WebView:", err);
+        }
+      }
+      return this.generateInBrowser(imageUrl, musicUrl, filename, onProgress);
+    }
+    static generateNative(imageUrl, musicUrl, filename, onProgress) {
+      return new Promise((resolve, reject) => {
+        const prevProgress = window.onMergeProgress;
+        const prevComplete = window.onMergeComplete;
+        const prevError = window.onMergeError;
+        const cleanup = () => {
+          window.onMergeProgress = prevProgress;
+          window.onMergeComplete = prevComplete;
+          window.onMergeError = prevError;
+        };
+        window.onMergeProgress = (p, text) => {
+          if (onProgress) onProgress(p, text);
+        };
+        window.onMergeComplete = (savedName) => {
+          cleanup();
+          resolve(savedName);
+        };
+        window.onMergeError = (errMsg) => {
+          cleanup();
+          reject(new Error(errMsg || "Error en codificaci\xF3n nativa"));
+        };
+        try {
+          window.AndroidBridge.mergeImageAudio(imageUrl, musicUrl, filename);
+        } catch (e) {
+          cleanup();
+          reject(e);
+        }
+      });
+    }
+    static async generateInBrowser(imageUrl, musicUrl, filename, onProgress) {
       const [img, audioData] = await Promise.all([
         this.loadImage(imageUrl),
         this.loadAudio(musicUrl)
@@ -824,8 +933,7 @@
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data);
       };
-      const maxDuration = 40;
-      const duration = Math.min(audioBuffer.duration || maxDuration, maxDuration);
+      const duration = Math.max(audioBuffer.duration || 15, 1);
       return new Promise((resolve, reject) => {
         let animId;
         const startTime = performance.now();
@@ -833,8 +941,8 @@
         const drawLoop = () => {
           frame++;
           ctx.drawImage(img, 0, 0, w, h);
-          ctx.fillStyle = frame % 2 === 0 ? "rgba(0,0,0,0.004)" : "rgba(0,0,0,0.002)";
-          ctx.fillRect(0, 0, 1, 1);
+          ctx.fillStyle = frame % 2 === 0 ? "#000000" : "#010101";
+          ctx.fillRect(0, 0, 2, 2);
           const elapsed = (performance.now() - startTime) / 1e3;
           if (onProgress) onProgress(Math.min(elapsed / duration, 1));
           if (elapsed < duration) {
@@ -875,7 +983,7 @@
         recorder.start(100);
         source.start(0);
         drawLoop();
-        timer = setTimeout(finish, (duration + 0.2) * 1e3);
+        timer = setTimeout(finish, (duration + 0.3) * 1e3);
       });
     }
     static async loadImage(url) {
@@ -1032,24 +1140,39 @@
             Downloader.downloadFile(media.videoUrl, `${prefix}.mp4`, "video/mp4");
             UI.showToast("Descargando MP4");
           }
+        } else if (target.id === "btnDownloadShortVideo") {
+          Downloader.downloadFile(media.videoUrl, `${prefix}_4s.mp4`, "video/mp4");
+          UI.showToast("Descargando video 4s...");
         } else if (target.id === "btnDownloadImage") {
-          const curImg = media.images[UI.currentImageIndex];
-          Downloader.downloadFile(curImg, `${prefix}_${UI.currentImageIndex + 1}.jpg`, "image/jpeg");
-          UI.showToast("Descargando Imagen");
+          const curImg = media.images && media.images[UI.currentImageIndex] || media.cover;
+          const imgIndex = (UI.currentImageIndex || 0) + 1;
+          Downloader.downloadFile(curImg, `${prefix}_foto_${imgIndex}.jpg`, "image/jpeg");
+          UI.showToast("Descargando Foto");
         } else if (target.id === "btnDownloadImageWithMusic") {
-          const curImg = media.images[UI.currentImageIndex];
+          const curImg = media.images && media.images[UI.currentImageIndex] || media.cover;
+          if (!curImg) {
+            UI.showToast("No se encontr\xF3 imagen");
+            return;
+          }
           if (!media.musicUrl) {
             UI.showToast("Sin m\xFAsica disponible");
             return;
           }
-          UI.showToast("Generando video...");
+          UI.showToast("Iniciando video con audio completo...");
           target.disabled = true;
+          const outName = `${prefix}_audio_completo.mp4`;
           VideoGenerator.generateAndSave(
             curImg,
             media.musicUrl,
-            `${prefix}_${UI.currentImageIndex + 1}_audio.mp4`
-          ).then(() => {
-            UI.showToast("Video descargado");
+            outName,
+            (progress, text) => {
+              const p = Math.round((Number(progress) || 0) * 100);
+              if (p % 15 === 0 || p >= 95) {
+                UI.showToast(text || `Generando video: ${p}%`);
+              }
+            }
+          ).then((finalName) => {
+            UI.showToast(`Video completo descargado: ${finalName || outName}`);
           }).catch((err) => {
             UI.showToast(err.message || "Error al generar video");
           }).finally(() => {

@@ -96,21 +96,39 @@ export class TikTokApi {
     }
 
     const d = json.data;
-    const isImages = Array.isArray(d.images) && d.images.length > 0;
-
     const fixUrl = (u) => {
       if (!u) return '';
       return u.startsWith('http') ? u : `https://www.tikwm.com${u}`;
     };
 
+    const rawImages = Array.isArray(d.images) && d.images.length > 0 ? d.images.map(fixUrl) : [];
+    const coverUrl = fixUrl(d.origin_cover || d.cover);
+    const musicUrl = fixUrl(d.music_info?.play || d.music);
+    const videoUrl = fixUrl(d.hdplay || d.play);
+    const duration = typeof d.duration === 'number' ? d.duration : 0;
+    const musicDuration = d.music_info?.duration || 0;
+
+    // Detect if this is a photo post or TikTok story (estado) with photo & music
+    const isPhotoOrStory = rawImages.length > 0 ||
+                           d.mimetype === 'image' ||
+                           (duration <= 5 && !!coverUrl && !!musicUrl);
+
+    const finalImages = rawImages.length > 0 ? rawImages : (isPhotoOrStory && coverUrl ? [coverUrl] : []);
+    const isImages = finalImages.length > 0;
+    const hasPhotoWithAudio = isPhotoOrStory && !!musicUrl && finalImages.length > 0;
+
     return {
       id: d.id,
       title: d.title || '',
-      cover: fixUrl(d.cover || d.origin_cover),
+      cover: coverUrl,
       isImages,
-      images: isImages ? d.images.map(fixUrl) : [],
-      videoUrl: fixUrl(d.hdplay || d.play),
-      musicUrl: fixUrl(d.music_info?.play || d.music),
+      images: finalImages,
+      videoUrl,
+      musicUrl,
+      hasPhotoWithAudio,
+      isPhotoStory: isPhotoOrStory,
+      duration,
+      musicDuration,
       author: {
         name: d.author?.nickname || 'TikTok User',
         handle: d.author?.unique_id ? `@${d.author.unique_id}` : '',

@@ -58,7 +58,10 @@ export class UI {
     if (data.isImages) {
       if (badge) {
         badge.style.display = 'flex';
-        badge.innerHTML = `${Icons.image} <span>1 / ${data.images.length}</span>`;
+        const badgeText = data.musicUrl
+          ? (data.images.length > 1 ? `${data.images.length} Fotos • Audio Completo` : 'Foto • Audio Completo')
+          : `1 / ${data.images.length}`;
+        badge.innerHTML = `${Icons.image} <span>${badgeText}</span>`;
       }
 
       const img = document.createElement('img');
@@ -82,37 +85,59 @@ export class UI {
         viewer.appendChild(btnNext);
       }
 
-      const btnDlCurrent = document.createElement('button');
-      btnDlCurrent.className = 'btn-primary';
-      btnDlCurrent.id = 'btnDownloadImage';
-      btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Imagen</span>`;
-
       const subRow = document.createElement('div');
       subRow.className = 'action-row';
 
-      if (data.images.length > 1) {
-        const btnDlAll = document.createElement('button');
-        btnDlAll.className = 'btn-secondary';
-        btnDlAll.id = 'btnDownloadAllImages';
-        btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
-        subRow.appendChild(btnDlAll);
-      }
-
       if (data.musicUrl) {
         const btnWithMusic = document.createElement('button');
-        btnWithMusic.className = 'btn-secondary';
+        btnWithMusic.className = 'btn-primary';
         btnWithMusic.id = 'btnDownloadImageWithMusic';
-        btnWithMusic.innerHTML = `${Icons.videoMusic} <span>Con música</span>`;
-        subRow.appendChild(btnWithMusic);
+        btnWithMusic.innerHTML = `${Icons.videoMusic} <span>Video con audio completo</span>`;
+        actions.appendChild(btnWithMusic);
+
+        const btnDlCurrent = document.createElement('button');
+        btnDlCurrent.className = 'btn-secondary';
+        btnDlCurrent.id = 'btnDownloadImage';
+        btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Foto</span>`;
+        subRow.appendChild(btnDlCurrent);
+
+        if (data.images.length > 1) {
+          const btnDlAll = document.createElement('button');
+          btnDlAll.className = 'btn-secondary';
+          btnDlAll.id = 'btnDownloadAllImages';
+          btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
+          subRow.appendChild(btnDlAll);
+        }
 
         const btnMusic = document.createElement('button');
         btnMusic.className = 'btn-secondary';
         btnMusic.id = 'btnDownloadAudio';
-        btnMusic.innerHTML = `${Icons.music} <span>Audio</span>`;
+        btnMusic.innerHTML = `${Icons.music} <span>Audio (MP3)</span>`;
         subRow.appendChild(btnMusic);
+
+        if (data.videoUrl && data.duration <= 5) {
+          const btnShort = document.createElement('button');
+          btnShort.className = 'btn-secondary';
+          btnShort.id = 'btnDownloadShortVideo';
+          btnShort.innerHTML = `${Icons.video} <span>Video 4s</span>`;
+          subRow.appendChild(btnShort);
+        }
+      } else {
+        const btnDlCurrent = document.createElement('button');
+        btnDlCurrent.className = 'btn-primary';
+        btnDlCurrent.id = 'btnDownloadImage';
+        btnDlCurrent.innerHTML = `${Icons.download} <span>Descargar Imagen</span>`;
+        actions.appendChild(btnDlCurrent);
+
+        if (data.images.length > 1) {
+          const btnDlAll = document.createElement('button');
+          btnDlAll.className = 'btn-secondary';
+          btnDlAll.id = 'btnDownloadAllImages';
+          btnDlAll.innerHTML = `${Icons.download} <span>Todas (${data.images.length})</span>`;
+          subRow.appendChild(btnDlAll);
+        }
       }
 
-      actions.appendChild(btnDlCurrent);
       if (subRow.children.length > 0) actions.appendChild(subRow);
 
     } else {

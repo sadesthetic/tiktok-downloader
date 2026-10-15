@@ -142,24 +142,39 @@ class App {
           Downloader.downloadFile(media.videoUrl, `${prefix}.mp4`, 'video/mp4');
           UI.showToast('Descargando MP4');
         }
+      } else if (target.id === 'btnDownloadShortVideo') {
+        Downloader.downloadFile(media.videoUrl, `${prefix}_4s.mp4`, 'video/mp4');
+        UI.showToast('Descargando video 4s...');
       } else if (target.id === 'btnDownloadImage') {
-        const curImg = media.images[UI.currentImageIndex];
-        Downloader.downloadFile(curImg, `${prefix}_${UI.currentImageIndex + 1}.jpg`, 'image/jpeg');
-        UI.showToast('Descargando Imagen');
+        const curImg = (media.images && media.images[UI.currentImageIndex]) || media.cover;
+        const imgIndex = (UI.currentImageIndex || 0) + 1;
+        Downloader.downloadFile(curImg, `${prefix}_foto_${imgIndex}.jpg`, 'image/jpeg');
+        UI.showToast('Descargando Foto');
       } else if (target.id === 'btnDownloadImageWithMusic') {
-        const curImg = media.images[UI.currentImageIndex];
+        const curImg = (media.images && media.images[UI.currentImageIndex]) || media.cover;
+        if (!curImg) {
+          UI.showToast('No se encontró imagen');
+          return;
+        }
         if (!media.musicUrl) {
           UI.showToast('Sin música disponible');
           return;
         }
-        UI.showToast('Generando video...');
+        UI.showToast('Iniciando video con audio completo...');
         target.disabled = true;
+        const outName = `${prefix}_audio_completo.mp4`;
         VideoGenerator.generateAndSave(
           curImg,
           media.musicUrl,
-          `${prefix}_${UI.currentImageIndex + 1}_audio.mp4`
-        ).then(() => {
-          UI.showToast('Video descargado');
+          outName,
+          (progress, text) => {
+            const p = Math.round((Number(progress) || 0) * 100);
+            if (p % 15 === 0 || p >= 95) {
+              UI.showToast(text || `Generando video: ${p}%`);
+            }
+          }
+        ).then((finalName) => {
+          UI.showToast(`Video completo descargado: ${finalName || outName}`);
         }).catch((err) => {
           UI.showToast(err.message || 'Error al generar video');
         }).finally(() => {
